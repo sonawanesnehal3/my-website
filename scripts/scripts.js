@@ -127,6 +127,7 @@ function loadDelayed() {
 }
 
 async function loadPage() {
+  document.querySelector('head').innerHTML += `<meta name="universal-nav" content="profile, appswitcher, notifications">`;
   await loadEager(document);
   await loadLazy(document);
   loadDelayed();
