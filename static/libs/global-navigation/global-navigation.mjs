@@ -86,7 +86,7 @@ const MILO_BLOCKS = [
   'share',
   'reading-time',
 ];
-const AUTO_BLOCKS$1 = [
+const AUTO_BLOCKS = [
   { adobetv: 'tv.adobe.com' },
   { gist: 'https://gist.github.com' },
   { caas: '/tools/caas' },
@@ -198,7 +198,7 @@ const handleEntitlements = (() => {
   };
 })();
 
-function setupMiloObj$1(config) {
+function setupMiloObj(config) {
   window.milo ||= {};
   window.milo.deferredPromise = new Promise((resolve) => {
     config.resolveDeferred = resolve;
@@ -215,7 +215,7 @@ const [setConfig$1, updateConfig, getConfig$1] = (() => {
       config.codeRoot = conf.codeRoot ? `${origin}${conf.codeRoot}` : origin;
       config.base = config.miloLibs || config.codeRoot;
       config.locale = pathname ? getLocale(conf.locales, pathname) : getLocale(conf.locales);
-      config.autoBlocks = conf.autoBlocks ? [...AUTO_BLOCKS$1, ...conf.autoBlocks] : AUTO_BLOCKS$1;
+      config.autoBlocks = conf.autoBlocks ? [...AUTO_BLOCKS, ...conf.autoBlocks] : AUTO_BLOCKS;
       config.doNotInline = conf.doNotInline
         ? [...DO_NOT_INLINE, ...conf.doNotInline]
         : DO_NOT_INLINE;
@@ -235,7 +235,7 @@ const [setConfig$1, updateConfig, getConfig$1] = (() => {
         && (conf.useDotHtml ?? PAGE_URL$1.pathname.endsWith('.html'));
       config.entitlements = handleEntitlements;
       config.consumerEntitlements = conf.entitlements || [];
-      setupMiloObj$1(config);
+      setupMiloObj(config);
       return config;
     },
     (conf) => (config = conf),
@@ -812,7 +812,7 @@ async function loadIms() {
     };
     const path = PAGE_URL$1.searchParams.get('useAlternateImsDomain')
       ? 'https://auth.services.adobe.com/imslib/imslib.min.js'
-      : `${base}/deps/imslib.min.js`;
+      : `https://main--milo--adobecom.hlx.page/libs/deps/imslib.min.js`;
     loadScript$1(path);
   }).then(() => {
     if (!window.adobeIMS?.isSignedInUser()) {
@@ -2010,7 +2010,7 @@ const decorateProfileTrigger = async ({ avatar }) => {
 let keyboardNav;
 const setupKeyboardNav = async () => {
   keyboardNav = keyboardNav || new Promise(async (resolve) => {
-    const KeyboardNavigation = await loadBlock$1('./keyboard/index.js');
+    const KeyboardNavigation = await loadBlock$1('https://main--milo--adobecom.hlx.page/libs/blocks/global-navigation/utilities/keyboard/index.js');
     const instance = new KeyboardNavigation();
     resolve(instance);
   });
@@ -2212,8 +2212,8 @@ class Gnav {
         const [
           Search,
         ] = await Promise.all([
-          loadBlock$1('../features/search/gnav-search.js'),
-          loadStyles('features/search/gnav-search.css'),
+          loadBlock$1('https://main--milo--adobecom.hlx.page/libs/blocks/global-navigation/features/search/gnav-search.js'),
+          loadStyles('https://main--milo--adobecom.hlx.page/libs/blocks/global-navigation/features/search/gnav-search.css'),
         ]);
         this.Search = Search;
 
@@ -2794,38 +2794,19 @@ class Gnav {
     return this.elements.search;
   };
 }
-//=========================
-const AUTO_BLOCKS = [
-  { adobetv: 'tv.adobe.com' },
-  { gist: 'https://gist.github.com' },
-  { caas: '/tools/caas' },
-  { faas: '/tools/faas' },
-  { fragment: '/fragments/' },
-  { instagram: 'https://www.instagram.com' },
-  { slideshare: 'https://www.slideshare.net' },
-  { tiktok: 'https://www.tiktok.com' },
-  { twitter: 'https://twitter.com' },
-  { vimeo: 'https://vimeo.com' },
-  { vimeo: 'https://player.vimeo.com' },
-  { youtube: 'https://www.youtube.com' },
-  { youtube: 'https://youtu.be' },
-  { 'pdf-viewer': '.pdf' },
-  { video: '.mp4' },
-  { merch: '/tools/ost?' },
-];
 
-const [setCustomConfig, updateCustomConfig, getCustomConfig] = (() => {
-  let customConfig = {};
-  return [
-    (customConf) => {
-      customConfig.autoBlocks = AUTO_BLOCKS; // Still need to check how it can be removed from utils.js#556
-      setupMiloObj(customConfig); // need to check this
-      return customConfig;
-    },
-    (customConf) => (customConfig = customConf),
-    () => customConfig,
-  ];
-})();
+// export const [setCustomConfig, updateCustomConfig, getCustomConfig] = (() => {
+//   let customConfig = {};
+//   return [
+//     (customConf) => {
+//       customConfig.autoBlocks = AUTO_BLOCKS; // Still need to check how it can be removed from utils.js#556
+//       setupMiloObj(customConfig); // need to check this
+//       return customConfig;
+//     },
+//     (customConf) => (customConfig = customConf),
+//     () => customConfig,
+//   ];
+// })();
 
  //const initialConfig = {
 //   // Provide the necessary initial configuration here
@@ -2837,23 +2818,6 @@ const [setCustomConfig, updateCustomConfig, getCustomConfig] = (() => {
 //   // Add other configurations as needed
 // };
 
-const config$1 = {
-  geoRouting: 'on',
-  fallbackRouting: 'on',
-  links: 'on',
-  imsClientId: 'milo',
-  codeRoot: '/libs',
-  locales,
-  prodDomains,
-  jarvis: {
-    id: 'milo',
-    version: '1.0',
-    onDemand: false,
-  },
-  privacyId: '7a5eb705-95ed-4cc4-a11d-0cc5760e93db', // valid for *.adobe.com
-  breadcrumbs: 'on',
-  // taxonomyRoot: '/your-path-here',
-};
 const locales = {
   '': { ietf: 'en-US', tk: 'hah7vzn.css' },
   ae_ar: { ietf: 'ar-AE', tk: 'lpk1hwn.css', dir: 'rtl' },
@@ -2953,6 +2917,26 @@ const locales = {
   cis_ru: { ietf: 'ru', tk: 'qxw8hzm.css' },
   sea: { ietf: 'en', tk: 'hah7vzn.css' },
 };
+
+const config$1 = {
+  geoRouting: 'on',
+  fallbackRouting: 'on',
+  links: 'on',
+  imsClientId: 'milo',
+  codeRoot: '/libs',
+  locales,
+  prodDomains: 'milo.adobe.com',
+  jarvis: {
+    id: 'milo',
+    version: '1.0',
+    onDemand: false,
+  },
+  privacyId: '7a5eb705-95ed-4cc4-a11d-0cc5760e93db', // valid for *.adobe.com
+  breadcrumbs: 'on',
+  miloLibs: 'https://main--milo--adobecom.hlx.page/libs',
+  // taxonomyRoot: '/your-path-here',
+};
+
 //=======================
 async function init$8(block) {
   console.log(block);
@@ -2960,7 +2944,7 @@ async function init$8(block) {
   const nonMiloUrl = "https://main--milo--adobecom.hlx.page/drafts/snehal/fragments/my-gnav";
   try {
     setConfig$1(config$1);
-    const { locale, mep } = getConfig$1() || getCustomConfig();
+    const { locale, mep } = getConfig$1();
     const url = nonMiloUrl || getMetadata$4('gnav-source') || `${locale.contentRoot}/gnav`;
     const content = await fetchAndProcessPlainHtml({ url })
       .catch((e) => lanaLog({
@@ -25287,4 +25271,4 @@ const caasTags$1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty
   default: caasTags
 }, Symbol.toStringTag, { value: 'Module' }));
 
-export { CONFIG$1 as CONFIG, LANGMAP, init$8 as default, getCustomConfig, getUniversalNavLocale, osMap, setCustomConfig, updateCustomConfig };
+export { CONFIG$1 as CONFIG, LANGMAP, init$8 as default, getUniversalNavLocale, osMap };
