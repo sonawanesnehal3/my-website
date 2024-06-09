@@ -2918,11 +2918,11 @@ const locales = {
   sea: { ietf: 'en', tk: 'hah7vzn.css' },
 };
 
-const config$1 = {
+const customConfig = {
   geoRouting: 'on',
   fallbackRouting: 'on',
   links: 'on',
-  imsClientId: 'milo',
+  //imsClientId: 'milo',
   codeRoot: '/libs',
   locales,
   prodDomains: 'milo.adobe.com',
@@ -2938,13 +2938,16 @@ const config$1 = {
 };
 
 //=======================
-async function init$8(block) {
+async function init$8(block, consumerConfig) {
   console.log(block);
   debugger
   const nonMiloUrl = "https://main--milo--adobecom.hlx.page/drafts/snehal/fragments/my-gnav";
   try {
-    setConfig$1(config$1);
-    const { locale, mep } = getConfig$1();
+    console.log(consumerConfig);
+    console.log(customConfig);
+    console.log({...customConfig, ...consumerConfig});
+    setConfig$1({...customConfig, ...consumerConfig});
+    const { locale, mep, myConfig } = getConfig$1();
     const url = nonMiloUrl || getMetadata$4('gnav-source') || `${locale.contentRoot}/gnav`;
     const content = await fetchAndProcessPlainHtml({ url })
       .catch((e) => lanaLog({
@@ -2953,6 +2956,7 @@ async function init$8(block) {
         tags: 'errorType=error,module=gnav',
       }));
     if (!content) return null;
+    block.classList.add('global-navigation');
     const gnav = new Gnav({
       content,
       block,
