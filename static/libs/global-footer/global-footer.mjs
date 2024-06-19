@@ -1,3 +1,1274 @@
+/* eslint-disable no-console */
+
+const MILO_TEMPLATES = [
+  '404',
+  'featured-story',
+];
+const MILO_BLOCKS = [
+  'accordion',
+  'action-item',
+  'action-scroller',
+  'adobetv',
+  'article-feed',
+  'article-header',
+  'aside',
+  'author-header',
+  'brick',
+  'bulk-publish',
+  'bulk-publish-v2',
+  'caas',
+  'caas-config',
+  'caas-marquee',
+  'caas-marquee-metadata',
+  'card',
+  'card-horizontal',
+  'card-metadata',
+  'carousel',
+  'chart',
+  'columns',
+  'faas',
+  'featured-article',
+  'figure',
+  'form',
+  'fragment',
+  'featured-article',
+  'global-footer',
+  'global-navigation',
+  'graybox',
+  'footer',
+  'gnav',
+  'hero-marquee',
+  'how-to',
+  'icon-block',
+  'iframe',
+  'instagram',
+  'locui',
+  'marketo',
+  'marquee',
+  'marquee-anchors',
+  'martech-metadata',
+  'media',
+  'merch',
+  'merch-card',
+  'merch-card-collection',
+  'merch-offers',
+  'mnemonic-list',
+  'mobile-app-banner',
+  'modal',
+  'modal-metadata',
+  'pdf-viewer',
+  'quote',
+  'read-more',
+  'recommended-articles',
+  'region-nav',
+  'review',
+  'section-metadata',
+  'slideshare',
+  'preflight',
+  'promo',
+  'quiz',
+  'quiz-entry',
+  'quiz-marquee',
+  'quiz-results',
+  'tabs',
+  'table-of-contents',
+  'text',
+  'walls-io',
+  'table',
+  'table-metadata',
+  'tags',
+  'tag-selector',
+  'tiktok',
+  'twitter',
+  'video',
+  'vimeo',
+  'youtube',
+  'z-pattern',
+  'share',
+  'reading-time',
+];
+const AUTO_BLOCKS = [
+  { adobetv: 'tv.adobe.com' },
+  { gist: 'https://gist.github.com' },
+  { caas: '/tools/caas' },
+  { faas: '/tools/faas' },
+  { fragment: '/fragments/' },
+  { instagram: 'https://www.instagram.com' },
+  { slideshare: 'https://www.slideshare.net' },
+  { tiktok: 'https://www.tiktok.com' },
+  { twitter: 'https://twitter.com' },
+  { vimeo: 'https://vimeo.com' },
+  { vimeo: 'https://player.vimeo.com' },
+  { youtube: 'https://www.youtube.com' },
+  { youtube: 'https://youtu.be' },
+  { 'pdf-viewer': '.pdf' },
+  { video: '.mp4' },
+  { merch: '/tools/ost?' },
+];
+const DO_NOT_INLINE = [
+  'accordion',
+  'columns',
+  'z-pattern',
+];
+
+const ENVS = {
+  stage: {
+    name: 'stage',
+    ims: 'stg1',
+    adobeIO: 'cc-collab-stage.adobe.io',
+    adminconsole: 'stage.adminconsole.adobe.com',
+    account: 'stage.account.adobe.com',
+    edgeConfigId: '8d2805dd-85bf-4748-82eb-f99fdad117a6',
+    pdfViewerClientId: '600a4521c23d4c7eb9c7b039bee534a0',
+  },
+  prod: {
+    name: 'prod',
+    ims: 'prod',
+    adobeIO: 'cc-collab.adobe.io',
+    adminconsole: 'adminconsole.adobe.com',
+    account: 'account.adobe.com',
+    edgeConfigId: '2cba807b-7430-41ae-9aac-db2b0da742d5',
+    pdfViewerClientId: '3c0a5ddf2cc04d3198d9e48efc390fa9',
+  },
+};
+ENVS.local = {
+  ...ENVS.stage,
+  name: 'local',
+};
+
+const MILO_EVENTS = { DEFERRED: 'milo:deferred' };
+
+const LANGSTORE = 'langstore';
+const PAGE_URL$1 = new URL(window.location.href);
+const SLD = PAGE_URL$1.hostname.includes('.aem.') ? 'aem' : 'hlx';
+
+const PROMO_PARAM = 'promo';
+
+function getEnv(conf) {
+  const { host } = window.location;
+  const query = PAGE_URL$1.searchParams.get('env');
+
+  if (query) return { ...ENVS[query], consumer: conf[query] };
+  if (host.includes('localhost')) return { ...ENVS.local, consumer: conf.local };
+  /* c8 ignore start */
+  if (host.includes(`${SLD}.page`)
+    || host.includes(`${SLD}.live`)
+    || host.includes('stage.adobe')
+    || host.includes('corp.adobe')) {
+    return { ...ENVS.stage, consumer: conf.stage };
+  }
+  return { ...ENVS.prod, consumer: conf.prod };
+  /* c8 ignore stop */
+}
+
+function getLocale(locales, pathname = window.location.pathname) {
+  if (!locales) {
+    return { ietf: 'en-US', tk: 'hah7vzn.css', prefix: '' };
+  }
+  const split = pathname.split('/');
+  const localeString = split[1];
+  const locale = locales[localeString] || locales[''];
+  if (localeString === LANGSTORE) {
+    locale.prefix = `/${localeString}/${split[2]}`;
+    if (
+      Object.values(locales)
+        .find((loc) => loc.ietf?.startsWith(split[2]))?.dir === 'rtl'
+    ) locale.dir = 'rtl';
+    return locale;
+  }
+  const isUS = locale.ietf === 'en-US';
+  locale.prefix = isUS ? '' : `/${localeString}`;
+  locale.region = isUS ? 'us' : localeString.split('_')[0];
+  return locale;
+}
+
+function getMetadata$3(name, doc = document) {
+  const attr = name && name.includes(':') ? 'property' : 'name';
+  const meta = doc.head.querySelector(`meta[${attr}="${name}"]`);
+  return meta && meta.content;
+}
+
+const handleEntitlements = (() => {
+  let entResolve;
+  const entPromise = new Promise((resolve) => {
+    entResolve = resolve;
+  });
+
+  return (resolveVal) => {
+    if (resolveVal !== undefined) {
+      entResolve(resolveVal);
+    }
+    return entPromise;
+  };
+})();
+
+function setupMiloObj(config) {
+  window.milo ||= {};
+  window.milo.deferredPromise = new Promise((resolve) => {
+    config.resolveDeferred = resolve;
+  });
+}
+
+const [setConfig$1, updateConfig, getConfig$1] = (() => {
+  let config = {};
+  return [
+    (conf) => {
+      const origin = conf.origin || window.location.origin;
+      const pathname = conf.pathname || window.location.pathname;
+      config = { env: getEnv(conf), ...conf };
+      config.codeRoot = conf.codeRoot ? `${origin}${conf.codeRoot}` : origin;
+      config.base = config.miloLibs || config.codeRoot;
+      config.locale = pathname ? getLocale(conf.locales, pathname) : getLocale(conf.locales);
+      config.autoBlocks = conf.autoBlocks ? [...AUTO_BLOCKS, ...conf.autoBlocks] : AUTO_BLOCKS;
+      config.doNotInline = conf.doNotInline
+        ? [...DO_NOT_INLINE, ...conf.doNotInline]
+        : DO_NOT_INLINE;
+      const lang = getMetadata$3('content-language') || config.locale.ietf;
+      document.documentElement.setAttribute('lang', lang);
+      try {
+        const dir = getMetadata$3('content-direction')
+          || config.locale.dir
+          || (config.locale.ietf && (new Intl.Locale(config.locale.ietf)?.textInfo?.direction))
+          || 'ltr';
+        document.documentElement.setAttribute('dir', dir);
+      } catch (e) {
+        console.log('Invalid or missing locale:', e);
+      }
+      config.locale.contentRoot = `${origin}${config.locale.prefix}${config.contentRoot ?? ''}`;
+      config.useDotHtml = !PAGE_URL$1.origin.includes(`.${SLD}.`)
+        && (conf.useDotHtml ?? PAGE_URL$1.pathname.endsWith('.html'));
+      config.entitlements = handleEntitlements;
+      config.consumerEntitlements = conf.entitlements || [];
+      setupMiloObj(config);
+      return config;
+    },
+    (conf) => (config = conf),
+    () => config,
+  ];
+})();
+
+function createTag$1(tag, attributes, html, options = {}) {
+  const el = document.createElement(tag);
+  if (html) {
+    if (html instanceof HTMLElement
+      || html instanceof SVGElement
+      || html instanceof DocumentFragment) {
+      el.append(html);
+    } else if (Array.isArray(html)) {
+      el.append(...html);
+    } else {
+      el.insertAdjacentHTML('beforeend', html);
+    }
+  }
+  if (attributes) {
+    Object.entries(attributes).forEach(([key, val]) => {
+      el.setAttribute(key, val);
+    });
+  }
+  options.parent?.append(el);
+  return el;
+}
+
+function getExtension(path) {
+  const pageName = path.split('/').pop();
+  return pageName.includes('.') ? pageName.split('.').pop() : '';
+}
+
+function localizeLink(
+  href,
+  originHostName = window.location.hostname,
+  overrideDomain = false,
+) {
+  try {
+    const url = new URL(href);
+    const relative = url.hostname === originHostName;
+    const processedHref = relative ? href.replace(url.origin, '') : href;
+    const { hash } = url;
+    if (hash.includes('#_dnt')) return processedHref.replace('#_dnt', '');
+    const path = url.pathname;
+    const extension = getExtension(path);
+    const allowedExts = ['', 'html', 'json'];
+    if (!allowedExts.includes(extension)) return processedHref;
+    const { locale, locales, prodDomains } = getConfig$1();
+    if (!locale || !locales) return processedHref;
+    const isLocalizable = relative || (prodDomains && prodDomains.includes(url.hostname))
+      || overrideDomain;
+    if (!isLocalizable) return processedHref;
+    const isLocalizedLink = path.startsWith(`/${LANGSTORE}`) || Object.keys(locales)
+      .some((loc) => loc !== '' && (path.startsWith(`/${loc}/`) || path.endsWith(`/${loc}`)));
+    if (isLocalizedLink) return processedHref;
+    const urlPath = `${locale.prefix}${path}${url.search}${hash}`;
+    return relative ? urlPath : `${url.origin}${urlPath}`;
+  } catch (error) {
+    return href;
+  }
+}
+
+function loadLink(href, { as, callback, crossorigin, rel, fetchpriority } = {}) {
+  let link = document.head.querySelector(`link[href="${href}"]`);
+  if (!link) {
+    link = document.createElement('link');
+    link.setAttribute('rel', rel);
+    if (as) link.setAttribute('as', as);
+    if (crossorigin) link.setAttribute('crossorigin', crossorigin);
+    if (fetchpriority) link.setAttribute('fetchpriority', fetchpriority);
+    link.setAttribute('href', href);
+    if (callback) {
+      link.onload = (e) => callback(e.type);
+      link.onerror = (e) => callback(e.type);
+    }
+    document.head.appendChild(link);
+  } else if (callback) {
+    callback('noop');
+  }
+  return link;
+}
+
+function loadStyle$2(href, callback) {
+  return loadLink(href, { rel: 'stylesheet', callback });
+}
+
+function appendHtmlToCanonicalUrl() {
+  const { useDotHtml } = getConfig$1();
+  if (!useDotHtml) return;
+  const canonEl = document.head.querySelector('link[rel="canonical"]');
+  if (!canonEl) return;
+  const canonUrl = new URL(canonEl.href);
+  if (canonUrl.pathname.endsWith('/') || canonUrl.pathname.endsWith('.html')) return;
+  const pagePath = PAGE_URL$1.pathname.replace('.html', '');
+  if (pagePath !== canonUrl.pathname) return;
+  canonEl.setAttribute('href', `${canonEl.href}.html`);
+}
+
+function appendHtmlToLink(link) {
+  const { useDotHtml } = getConfig$1();
+  if (!useDotHtml) return;
+  const href = link.getAttribute('href');
+  if (!href?.length) return;
+
+  const { autoBlocks = [], htmlExclude = [] } = getConfig$1();
+
+  const HAS_EXTENSION = /\..*$/;
+  let url = { pathname: href };
+
+  try { url = new URL(href, PAGE_URL$1); } catch (e) { /* do nothing */ }
+
+  if (!(href.startsWith('/') || href.startsWith(PAGE_URL$1.origin))
+    || url.pathname?.endsWith('/')
+    || href === PAGE_URL$1.origin
+    || HAS_EXTENSION.test(href.split('/').pop())
+    || htmlExclude?.some((excludeRe) => excludeRe.test(href))) {
+    return;
+  }
+
+  const relativeAutoBlocks = autoBlocks
+    .map((b) => Object.values(b)[0])
+    .filter((b) => b.startsWith('/'));
+  const isAutoblockLink = relativeAutoBlocks.some((block) => href.includes(block));
+  if (isAutoblockLink) return;
+
+  try {
+    const linkUrl = new URL(href.startsWith('http') ? href : `${PAGE_URL$1.origin}${href}`);
+    if (linkUrl.pathname && !linkUrl.pathname.endsWith('.html')) {
+      linkUrl.pathname = `${linkUrl.pathname}.html`;
+      link.setAttribute('href', href.startsWith('/')
+        ? `${linkUrl.pathname}${linkUrl.search}${linkUrl.hash}`
+        : linkUrl.href);
+    }
+  } catch (e) {
+    window.lana?.log(`Error while attempting to append '.html' to ${link}: ${e}`);
+  }
+}
+
+const loadScript$1 = (url, type) => new Promise((resolve, reject) => {
+  let script = document.querySelector(`head > script[src="${url}"]`);
+  if (!script) {
+    const { head } = document;
+    script = document.createElement('script');
+    script.setAttribute('src', url);
+    if (type) {
+      script.setAttribute('type', type);
+    }
+    head.append(script);
+  }
+
+  if (script.dataset.loaded) {
+    resolve(script);
+    return;
+  }
+
+  const onScript = (event) => {
+    script.removeEventListener('load', onScript);
+    script.removeEventListener('error', onScript);
+
+    if (event.type === 'error') {
+      reject(new Error(`error loading script: ${script.src}`));
+    } else if (event.type === 'load') {
+      script.dataset.loaded = true;
+      resolve(script);
+    }
+  };
+
+  script.addEventListener('load', onScript);
+  script.addEventListener('error', onScript);
+});
+
+async function loadTemplate() {
+  const template = getMetadata$3('template');
+  if (!template) return;
+  const name = template.toLowerCase().replace(/[^0-9a-z]/gi, '-');
+  document.body.classList.add(name);
+  const { miloLibs, codeRoot } = getConfig$1();
+  const base = miloLibs && MILO_TEMPLATES.includes(name) ? miloLibs : codeRoot;
+  const styleLoaded = new Promise((resolve) => {
+    loadStyle$2(`${base}/templates/${name}/${name}.css`, resolve);
+  });
+  const scriptLoaded = new Promise((resolve) => {
+    (async () => {
+      try {
+        await import(`${base}/templates/${name}/${name}.js`);
+      } catch (err) {
+        console.log(`failed to load module for ${name}`, err);
+      }
+      resolve();
+    })();
+  });
+  await Promise.all([styleLoaded, scriptLoaded]);
+}
+
+async function loadBlock$2(block) {
+  if (block.classList.contains('hide-block')) {
+    block.remove();
+    return null;
+  }
+
+  const name = block.classList[0];
+  const { miloLibs, codeRoot, mep } = getConfig$1();
+
+  const base = miloLibs && MILO_BLOCKS.includes(name) ? miloLibs : codeRoot;
+  let path = `${base}/blocks/${name}`;
+
+  if (mep?.blocks?.[name]) path = mep.blocks[name];
+
+  const blockPath = `${path}/${name}`;
+
+  const styleLoaded = new Promise((resolve) => {
+    loadStyle$2(`${blockPath}.css`, resolve);
+  });
+
+  const scriptLoaded = new Promise((resolve) => {
+    (async () => {
+      try {
+        const { default: init } = await import(`${blockPath}.js`);
+        await init(block);
+      } catch (err) {
+        console.log(`Failed loading ${name}`, err);
+        const config = getConfig$1();
+        if (config.env.name !== 'prod') {
+          const { showError } = await Promise.resolve().then(() => fallback);
+          showError(block, name);
+        }
+      }
+      resolve();
+    })();
+  });
+  await Promise.all([styleLoaded, scriptLoaded]);
+  return block;
+}
+
+function decorateSVG(a) {
+  const { textContent, href } = a;
+  if (!(textContent.includes('.svg') || href.includes('.svg'))) return a;
+  try {
+    // Mine for URL and alt text
+    const splitText = textContent.split('|');
+    const textUrl = new URL(splitText.shift().trim());
+    const altText = splitText.join('|').trim();
+
+    // Relative link checking
+    const hrefUrl = a.href.startsWith('/')
+      ? new URL(`${window.location.origin}${a.href}`)
+      : new URL(a.href);
+
+    const src = textUrl.hostname.includes(`.${SLD}.`) ? textUrl.pathname : textUrl;
+
+    const img = createTag$1('img', { loading: 'lazy', src });
+    if (altText) img.alt = altText;
+    const pic = createTag$1('picture', null, img);
+
+    if (textUrl.pathname === hrefUrl.pathname) {
+      a.parentElement.replaceChild(pic, a);
+      return pic;
+    }
+    a.textContent = '';
+    a.append(pic);
+    return a;
+  } catch (e) {
+    console.log('Failed to create SVG.', e.message);
+    return a;
+  }
+}
+
+function decorateImageLinks(el) {
+  const images = el.querySelectorAll('img[alt*="|"]');
+  if (!images.length) return;
+  [...images].forEach((img) => {
+    const [source, alt, icon] = img.alt.split('|');
+    try {
+      const url = new URL(source.trim());
+      const href = url.hostname.includes(`.${SLD}.`) ? `${url.pathname}${url.hash}` : url.href;
+      if (alt?.trim().length) img.alt = alt.trim();
+      const pic = img.closest('picture');
+      const picParent = pic.parentElement;
+      if (href.includes('.mp4')) {
+        const a = createTag$1('a', { href: url, 'data-video-poster': img.src });
+        a.innerHTML = url;
+        pic.replaceWith(a);
+      } else {
+        const aTag = createTag$1('a', { href, class: 'image-link' });
+        picParent.insertBefore(aTag, pic);
+        if (icon) {
+          Promise.resolve().then(() => imageVideoLink).then((mod) => mod.default(picParent, aTag, icon));
+        } else {
+          aTag.append(pic);
+        }
+      }
+    } catch (e) {
+      console.log('Error:', `${e.message} '${source.trim()}'`);
+    }
+  });
+}
+
+function decorateAutoBlock(a) {
+  const config = getConfig$1();
+  const { hostname } = window.location;
+  let url;
+  try {
+    url = new URL(a.href);
+  } catch (e) {
+    window.lana?.log(`Cannot make URL from decorateAutoBlock - ${a?.href}: ${e.toString()}`);
+    return false;
+  }
+
+  const href = hostname === url.hostname
+    ? `${url.pathname}${url.search}${url.hash}`
+    : a.href;
+
+  return config.autoBlocks.find((candidate) => {
+    const key = Object.keys(candidate)[0];
+    const match = href.includes(candidate[key]);
+    if (!match) return false;
+
+    if (key === 'pdf-viewer' && !a.textContent.includes('.pdf')) {
+      a.target = '_blank';
+      return false;
+    }
+
+    const hasExtension = a.href.split('/').pop().includes('.');
+    const mp4Match = a.textContent.match('media_.*.mp4');
+    if (key === 'fragment' && (!hasExtension || mp4Match)) {
+      if (a.href === window.location.href) {
+        return false;
+      }
+
+      const isInlineFrag = url.hash.includes('#_inline');
+      if (url.hash === '' || isInlineFrag) {
+        const { parentElement } = a;
+        const { nodeName, innerHTML } = parentElement;
+        const noText = innerHTML === a.outerHTML;
+        if (noText && nodeName === 'P') {
+          const div = createTag$1('div', null, a);
+          parentElement.parentElement.replaceChild(div, parentElement);
+        }
+      }
+
+      // previewing a fragment page with mp4 video
+      if (mp4Match) {
+        a.className = 'video link-block';
+        return false;
+      }
+
+      // Modals
+      if (url.hash !== '' && !isInlineFrag) {
+        a.dataset.modalPath = url.pathname;
+        a.dataset.modalHash = url.hash;
+        a.href = url.hash;
+        a.className = `modal link-block ${[...a.classList].join(' ')}`;
+        return true;
+      }
+    }
+
+    // slack uploaded mp4s
+    if (key === 'video' && !a.textContent.match('media_.*.mp4')) {
+      return false;
+    }
+
+    a.className = `${key} link-block`;
+    return true;
+  });
+}
+
+function decorateLinks(el) {
+  const config = getConfig$1();
+  decorateImageLinks(el);
+  const anchors = el.getElementsByTagName('a');
+  return [...anchors].reduce((rdx, a) => {
+    appendHtmlToLink(a);
+    a.href = localizeLink(a.href);
+    decorateSVG(a);
+    if (config.env?.name === 'stage' && config.stageDomainsMap?.[a.hostname]) {
+      a.href = a.href.replace(a.hostname, config.stageDomainsMap[a.hostname]);
+    }
+    if (a.href.includes('#_blank')) {
+      a.setAttribute('target', '_blank');
+      a.href = a.href.replace('#_blank', '');
+    }
+    if (a.href.includes('#_dnb')) {
+      a.href = a.href.replace('#_dnb', '');
+    } else {
+      const autoBlock = decorateAutoBlock(a);
+      if (autoBlock) {
+        rdx.push(a);
+      }
+    }
+    // Custom action links
+    const loginEvent = '#_evt-login';
+    if (a.href.includes(loginEvent)) {
+      a.href = a.href.replace(loginEvent, '');
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.adobeIMS?.signIn();
+      });
+    }
+    return rdx;
+  }, []);
+}
+
+function decorateContent(el) {
+  const children = [el];
+  let child = el;
+  while (child) {
+    child = child.nextElementSibling;
+    if (child && child.nodeName !== 'DIV') {
+      children.push(child);
+    } else {
+      break;
+    }
+  }
+  const block = document.createElement('div');
+  block.className = 'content';
+  block.append(...children);
+  block.dataset.block = '';
+  return block;
+}
+
+function decorateDefaults(el) {
+  const firstChild = ':scope > *:not(div):first-child';
+  const afterBlock = ':scope > div + *:not(div)';
+  const children = el.querySelectorAll(`${firstChild}, ${afterBlock}`);
+  children.forEach((child) => {
+    const prev = child.previousElementSibling;
+    const content = decorateContent(child);
+    if (prev) {
+      prev.insertAdjacentElement('afterend', content);
+    } else {
+      el.insertAdjacentElement('afterbegin', content);
+    }
+  });
+}
+
+function decorateHeader() {
+  const header = document.querySelector('header');
+  if (!header) return;
+  const headerMeta = getMetadata$3('header');
+  if (headerMeta === 'off') {
+    document.body.classList.add('nav-off');
+    header.remove();
+    return;
+  }
+  header.className = headerMeta || 'gnav';
+  const metadataConfig = getMetadata$3('breadcrumbs')?.toLowerCase()
+  || getConfig$1().breadcrumbs;
+  if (metadataConfig === 'off') return;
+  const baseBreadcrumbs = getMetadata$3('breadcrumbs-base')?.length;
+  const breadcrumbs = document.querySelector('.breadcrumbs');
+  const autoBreadcrumbs = getMetadata$3('breadcrumbs-from-url') === 'on';
+  const dynamicNavActive = getMetadata$3('dynamic-nav') === 'on'
+    && window.sessionStorage.getItem('gnavSource') !== null;
+  if (!dynamicNavActive && (baseBreadcrumbs || breadcrumbs || autoBreadcrumbs)) header.classList.add('has-breadcrumbs');
+  if (breadcrumbs) header.append(breadcrumbs);
+  const promo = getMetadata$3('gnav-promo-source');
+  if (promo?.length) header.classList.add('has-promo');
+}
+
+async function decorateIcons(area, config) {
+  const icons$1 = area.querySelectorAll('span.icon');
+  if (icons$1.length === 0) return;
+  const { miloLibs, codeRoot } = config;
+  const base = miloLibs || codeRoot;
+  await new Promise((resolve) => { loadStyle$2(`${base}/features/icons/icons.css`, resolve); });
+  const { default: loadIcons } = await Promise.resolve().then(() => icons);
+  await loadIcons(icons$1, config);
+}
+
+async function decoratePlaceholders(area, config) {
+  const el = area.querySelector('main') || area;
+  const regex = /{{(.*?)}}|%7B%7B(.*?)%7D%7D/g;
+  const found = regex.test(el.innerHTML);
+  if (!found) return;
+  const { replaceText } = await Promise.resolve().then(() => placeholders);
+  el.innerHTML = await replaceText(el.innerHTML, config, regex);
+}
+
+async function loadFooter() {
+  const footer = document.querySelector('footer');
+  if (!footer) return;
+  const footerMeta = getMetadata$3('footer');
+  if (footerMeta === 'off') {
+    footer.remove();
+    return;
+  }
+  footer.className = footerMeta || 'footer';
+  await loadBlock$2(footer);
+}
+
+function filterDuplicatedLinkBlocks(blocks) {
+  if (!blocks?.length) return [];
+  const uniqueModalKeys = new Set();
+  const uniqueBlocks = [];
+  for (const obj of blocks) {
+    if (obj.className.includes('modal')) {
+      const key = `${obj.dataset.modalHash}-${obj.dataset.modalPath}`;
+      if (!uniqueModalKeys.has(key)) {
+        uniqueModalKeys.add(key);
+        uniqueBlocks.push(obj);
+      }
+    } else {
+      uniqueBlocks.push(obj);
+    }
+  }
+  return uniqueBlocks;
+}
+
+function decorateSection(section, idx) {
+  let links = decorateLinks(section);
+  decorateDefaults(section);
+  const blocks = section.querySelectorAll(':scope > div[class]:not(.content)');
+
+  const { doNotInline } = getConfig$1();
+  const blockLinks = [...blocks].reduce((blkLinks, block) => {
+    const blockName = block.classList[0];
+    links.filter((link) => block.contains(link))
+      .forEach((link) => {
+        if (link.classList.contains('fragment')
+          && MILO_BLOCKS.includes(blockName) // do not inline consumer blocks (for now)
+          && !doNotInline.includes(blockName)) {
+          if (!link.href.includes('#_inline')) {
+            link.href = `${link.href}#_inline`;
+          }
+          blkLinks.inlineFrags.push(link);
+        } else if (link.classList.contains('link-block')) {
+          blkLinks.autoBlocks.push(link);
+        }
+      });
+    return blkLinks;
+  }, { inlineFrags: [], autoBlocks: [] });
+
+  const embeddedLinks = [...blockLinks.inlineFrags, ...blockLinks.autoBlocks];
+  if (embeddedLinks.length) {
+    links = links.filter((link) => !embeddedLinks.includes(link));
+  }
+  section.className = 'section';
+  section.dataset.status = 'decorated';
+  section.dataset.idx = idx;
+  return {
+    blocks: [...links, ...blocks],
+    el: section,
+    idx,
+    preloadLinks: filterDuplicatedLinkBlocks(blockLinks.autoBlocks),
+  };
+}
+
+function decorateSections(el, isDoc) {
+  const selector = isDoc ? 'body > main > div' : ':scope > div';
+  return [...el.querySelectorAll(selector)].map(decorateSection);
+}
+
+async function decorateFooterPromo(doc = document) {
+  const footerPromoTag = getMetadata$3('footer-promo-tag', doc);
+  const footerPromoType = getMetadata$3('footer-promo-type', doc);
+  if (!footerPromoTag && footerPromoType !== 'taxonomy') return;
+
+  const { default: initFooterPromo } = await Promise.resolve().then(() => footerPromo);
+  await initFooterPromo(footerPromoTag, footerPromoType, doc);
+}
+
+let imsLoaded;
+async function loadIms() {
+  imsLoaded = imsLoaded || new Promise((resolve, reject) => {
+    const {
+      locale, imsClientId, imsScope, env, base, adobeid,
+    } = getConfig$1();
+    if (!imsClientId) {
+      reject(new Error('Missing IMS Client ID'));
+      return;
+    }
+    const [unavMeta, ahomeMeta] = [getMetadata$3('universal-nav')?.trim(), getMetadata$3('adobe-home-redirect')];
+    const defaultScope = `AdobeID,openid,gnav${unavMeta && unavMeta !== 'off' ? ',pps.read,firefly_api,additional_info.roles,read_organizations' : ''}`;
+    const timeout = setTimeout(() => reject(new Error('IMS timeout')), 5000);
+    window.adobeid = {
+      client_id: imsClientId,
+      scope: imsScope || defaultScope,
+      locale: locale?.ietf?.replace('-', '_') || 'en_US',
+      redirect_uri: ahomeMeta === 'on'
+        ? `https://www${env.name !== 'prod' ? '.stage' : ''}.adobe.com${locale.prefix}` : undefined,
+      autoValidateToken: true,
+      environment: env.ims,
+      useLocalStorage: false,
+      onReady: () => {
+        resolve();
+        clearTimeout(timeout);
+      },
+      onError: reject,
+      ...adobeid,
+    };
+    const path = PAGE_URL$1.searchParams.get('useAlternateImsDomain')
+      ? 'https://auth.services.adobe.com/imslib/imslib.min.js'
+      : `${base}/deps/imslib.min.js`;
+    loadScript$1(path);
+  }).then(() => {
+    if (!window.adobeIMS?.isSignedInUser()) {
+      getConfig$1().entitlements([]);
+    }
+  });
+
+  return imsLoaded;
+}
+
+async function loadMartech({
+  persEnabled = false,
+  persManifests = [],
+  postLCP = false,
+} = {}) {
+  // eslint-disable-next-line no-underscore-dangle
+  if (window.marketingtech?.adobe?.launch && window._satellite) {
+    return true;
+  }
+
+  const query = PAGE_URL$1.searchParams.get('martech');
+  if (query === 'off' || getMetadata$3('martech') === 'off') {
+    return false;
+  }
+
+  window.targetGlobalSettings = { bodyHidingEnabled: false };
+  loadIms().catch(() => {});
+
+  const { default: initMartech } = await Promise.resolve().then(() => martech);
+  await initMartech({ persEnabled, persManifests, postLCP });
+
+  return true;
+}
+
+const getMepValue = (val) => {
+  const valMap = { on: true, off: false, gnav: 'gnav' };
+  const finalVal = val?.toLowerCase().trim();
+  if (finalVal in valMap) return valMap[finalVal];
+  return finalVal;
+};
+
+const getMdValue = (key) => {
+  const value = getMetadata$3(key);
+  if (value) {
+    return getMepValue(value);
+  }
+  return false;
+};
+
+const getPromoMepEnablement = () => {
+  const mds = [
+    'apac_manifestnames',
+    'emea_manifestnames',
+    'americas_manifestnames',
+    'jp_manifestnames',
+    'manifestnames',
+  ];
+  const mdObject = mds.reduce((obj, key) => {
+    const val = getMdValue(key);
+    if (val) {
+      obj[key] = val;
+    }
+    return obj;
+  }, {});
+  if (Object.keys(mdObject).length) {
+    return mdObject;
+  }
+  return false;
+};
+
+const getMepEnablement = (mdKey, paramKey = false) => {
+  const paramValue = PAGE_URL$1.searchParams.get(paramKey || mdKey);
+  if (paramValue) return getMepValue(paramValue);
+  if (PROMO_PARAM === paramKey) return getPromoMepEnablement();
+  return getMdValue(mdKey);
+};
+
+const combineMepSources = async (persEnabled, promoEnabled, mepParam) => {
+  let persManifests = [];
+
+  if (persEnabled) {
+    persManifests = persEnabled.toLowerCase()
+      .split(/,|(\s+)|(\\n)/g)
+      .filter((path) => path?.trim())
+      .map((manifestPath) => ({ manifestPath }));
+  }
+
+  if (promoEnabled) {
+    const { default: getPromoManifests } = await Promise.resolve().then(() => promoUtils);
+    persManifests = persManifests.concat(getPromoManifests(promoEnabled, PAGE_URL$1.searchParams));
+  }
+
+  if (mepParam && mepParam !== 'off') {
+    const persManifestPaths = persManifests.map((manifest) => {
+      const { manifestPath } = manifest;
+      if (manifestPath.startsWith('/')) return manifestPath;
+      try {
+        const url = new URL(manifestPath);
+        return url.pathname;
+      } catch (e) {
+        return manifestPath;
+      }
+    });
+
+    mepParam.split('---').forEach((manifestPair) => {
+      const manifestPath = manifestPair.trim().toLowerCase().split('--')[0];
+      if (!persManifestPaths.includes(manifestPath)) {
+        persManifests.push({ manifestPath });
+      }
+    });
+  }
+  return persManifests;
+};
+
+async function checkForPageMods() {
+  const { mep: mepParam } = Object.fromEntries(PAGE_URL$1.searchParams);
+  if (mepParam === 'off') return;
+  const persEnabled = getMepEnablement('personalization');
+  const promoEnabled = getMepEnablement('manifestnames', PROMO_PARAM);
+  const targetEnabled = getMepEnablement('target');
+  const mepEnabled = persEnabled || targetEnabled || promoEnabled || mepParam;
+  if (!mepEnabled) return;
+
+  const config = getConfig$1();
+  config.mep = { targetEnabled };
+  loadLink(
+    `${config.base}/features/personalization/personalization.js`,
+    { as: 'script', rel: 'modulepreload' },
+  );
+
+  const persManifests = await combineMepSources(persEnabled, promoEnabled, mepParam);
+  if (targetEnabled === true) {
+    await loadMartech({ persEnabled: true, persManifests, targetEnabled });
+    return;
+  }
+  if (!persManifests.length) return;
+
+  loadIms()
+    .then(() => {
+      if (window.adobeIMS.isSignedInUser()) loadMartech();
+    })
+    .catch((e) => { console.log('Unable to load IMS:', e); });
+
+  const { preloadManifests, applyPers } = await Promise.resolve().then(() => personalization);
+  const manifests = preloadManifests({ persManifests }, { getConfig: getConfig$1, loadLink });
+
+  await applyPers(manifests);
+}
+
+async function loadPostLCP(config) {
+  if (config.mep?.targetEnabled === 'gnav') {
+    await loadMartech({ persEnabled: true, postLCP: true });
+  } else {
+    loadMartech();
+  }
+  const georouting = getMetadata$3('georouting') || config.geoRouting;
+  if (georouting === 'on') {
+    const { default: loadGeoRouting } = await Promise.resolve().then(() => georoutingv2);
+    await loadGeoRouting(config, createTag$1, getMetadata$3, loadBlock$2, loadStyle$2);
+  }
+  const header = document.querySelector('header');
+  if (header) {
+    header.classList.add('gnav-hide');
+    await loadBlock$2(header);
+    header.classList.remove('gnav-hide');
+  }
+  loadTemplate();
+  const { default: loadFonts } = await Promise.resolve().then(() => fonts);
+  loadFonts(config.locale, loadStyle$2);
+  if (config.mep?.preview) {
+    Promise.resolve().then(() => preview)
+      .then(({ default: decoratePreviewMode }) => decoratePreviewMode());
+  }
+}
+
+function scrollToHashedElement(hash) {
+  if (!hash || /=/.test(hash)) return; // skip if hash is used for deeplinking.
+  const elementId = decodeURIComponent(hash).slice(1);
+  let targetElement;
+  try {
+    targetElement = document.querySelector(`#${elementId}:not(.dialog-modal)`);
+  } catch (e) {
+    window.lana?.log(`Could not query element because of invalid hash - ${elementId}: ${e.toString()}`);
+  }
+  if (!targetElement) return;
+  const bufferHeight = document.querySelector('.global-navigation')?.offsetHeight || 0;
+  const topOffset = targetElement.getBoundingClientRect().top + window.pageYOffset;
+  window.scrollTo({
+    top: topOffset - bufferHeight,
+    behavior: 'smooth',
+  });
+}
+
+async function loadDeferred(area, blocks, config) {
+  const event = new Event(MILO_EVENTS.DEFERRED);
+  area.dispatchEvent(event);
+
+  if (area !== document) {
+    return;
+  }
+
+  config.resolveDeferred?.(true);
+
+  if (config.links === 'on') {
+    const path = `${config.contentRoot || ''}${getMetadata$3('links-path') || '/seo/links.json'}`;
+    Promise.resolve().then(() => links).then((mod) => mod.default(path, area));
+  }
+
+  if (config.locale?.ietf === 'ja-JP') {
+    // Japanese word-wrap
+    Promise.resolve().then(() => japaneseWordWrap).then(({ default: controlJapaneseLineBreaks }) => {
+      controlJapaneseLineBreaks(config, area);
+    });
+  }
+
+  Promise.resolve().then(() => samplerum).then(({ sampleRUM }) => {
+    sampleRUM('lazy');
+    sampleRUM.observe(blocks);
+    sampleRUM.observe(area.querySelectorAll('picture > img'));
+  });
+}
+
+function initSidekick() {
+  const initPlugins = async () => {
+    const { default: init } = await Promise.resolve().then(() => sidekick);
+    init({ createTag: createTag$1, loadBlock: loadBlock$2, loadScript: loadScript$1, loadStyle: loadStyle$2 });
+  };
+
+  if (document.querySelector('helix-sidekick')) {
+    initPlugins();
+  } else {
+    document.addEventListener('sidekick-ready', () => {
+      initPlugins();
+    });
+  }
+}
+
+function decorateMeta() {
+  const { origin } = window.location;
+  const contents = document.head.querySelectorAll(`[content*=".${SLD}."]`);
+  contents.forEach((meta) => {
+    if (meta.getAttribute('property') === 'hlx:proxyUrl') return;
+    try {
+      const url = new URL(meta.content);
+      const localizedLink = localizeLink(`${origin}${url.pathname}`);
+      const localizedURL = localizedLink.includes(origin) ? localizedLink : `${origin}${localizedLink}`;
+      meta.setAttribute('content', `${localizedURL}${url.search}${url.hash}`);
+    } catch (e) {
+      window.lana?.log(`Cannot make URL from metadata - ${meta.content}: ${e.toString()}`);
+    }
+  });
+
+  // Event-based modal
+  window.addEventListener('modal:open', async (e) => {
+    const { miloLibs } = getConfig$1();
+    const { findDetails, getModal } = await Promise.resolve().then(() => modal);
+    loadStyle$2(`${miloLibs}/blocks/modal/modal.css`);
+    const details = findDetails(e.detail.hash);
+    if (details) getModal(details);
+  });
+}
+
+function decorateDocumentExtras() {
+  decorateMeta();
+  decorateHeader();
+
+  Promise.resolve().then(() => samplerum).then(({ addRumListeners }) => {
+    addRumListeners();
+  });
+}
+
+async function documentPostSectionLoading(config) {
+  decorateFooterPromo();
+
+  const appendage = getMetadata$3('title-append');
+  if (appendage) {
+    Promise.resolve().then(() => titleAppend$1).then((module) => module.default(appendage));
+  }
+  if (getMetadata$3('seotech-structured-data') === 'on' || getMetadata$3('seotech-video-url')) {
+    Promise.resolve().then(() => seotech).then((module) => module.default(
+      { locationUrl: window.location.href, getMetadata: getMetadata$3, createTag: createTag$1, getConfig: getConfig$1 },
+    ));
+  }
+  const richResults = getMetadata$3('richresults');
+  if (richResults) {
+    const { default: addRichResults } = await Promise.resolve().then(() => richresults);
+    addRichResults(richResults, { createTag: createTag$1, getMetadata: getMetadata$3 });
+  }
+  loadFooter();
+  const { default: loadFavIcon } = await Promise.resolve().then(() => favicon);
+  loadFavIcon(createTag$1, getConfig$1(), getMetadata$3);
+  if (config.experiment?.selectedVariant?.scripts?.length) {
+    config.experiment.selectedVariant.scripts.forEach((script) => loadScript$1(script));
+  }
+  initSidekick();
+
+  const { default: delayed$1 } = await Promise.resolve().then(() => delayed);
+  delayed$1([getConfig$1, getMetadata$3, loadScript$1, loadStyle$2, loadIms]);
+
+  Promise.resolve().then(() => attributes).then((analytics) => {
+    document.querySelectorAll('main > div').forEach((section, idx) => analytics.decorateSectionAnalytics(section, idx, config));
+  });
+
+  document.body.appendChild(createTag$1('div', { id: 'page-load-ok-milo', style: 'display: none;' }));
+}
+
+async function processSection(section, config, isDoc) {
+  const inlineFrags = [...section.el.querySelectorAll('a[href*="#_inline"]')];
+  if (inlineFrags.length) {
+    const { default: loadInlineFrags } = await Promise.resolve().then(() => fragment);
+    const fragPromises = inlineFrags.map((link) => loadInlineFrags(link));
+    await Promise.all(fragPromises);
+    await decoratePlaceholders(section.el, config);
+    const newlyDecoratedSection = decorateSection(section.el, section.idx);
+    section.blocks = newlyDecoratedSection.blocks;
+    section.preloadLinks = newlyDecoratedSection.preloadLinks;
+  }
+
+  if (section.preloadLinks.length) {
+    const preloads = section.preloadLinks.map((block) => loadBlock$2(block));
+    await Promise.all(preloads);
+  }
+
+  const loaded = section.blocks.map((block) => loadBlock$2(block));
+
+  await decorateIcons(section.el, config);
+
+  // Only move on to the next section when all blocks are loaded.
+  await Promise.all(loaded);
+
+  // Show the section when all blocks inside are done.
+  delete section.el.dataset.status;
+
+  if (isDoc && section.el.dataset.idx === '0') {
+    await loadPostLCP(config);
+  }
+
+  delete section.el.dataset.idx;
+
+  return section.blocks;
+}
+
+async function loadArea(area = document) {
+  const isDoc = area === document;
+
+  if (isDoc) {
+    await checkForPageMods();
+    appendHtmlToCanonicalUrl();
+  }
+  const config = getConfig$1();
+
+  await decoratePlaceholders(area, config);
+
+  if (isDoc) {
+    decorateDocumentExtras();
+  }
+
+  const sections = decorateSections(area, isDoc);
+
+  const areaBlocks = [];
+  for (const section of sections) {
+    const sectionBlocks = await processSection(section, config, isDoc);
+    areaBlocks.push(...sectionBlocks);
+
+    areaBlocks.forEach((block) => {
+      if (!block.className.includes('metadata')) block.dataset.block = '';
+    });
+  }
+
+  const currentHash = window.location.hash;
+  if (currentHash) {
+    scrollToHashedElement(currentHash);
+  }
+
+  if (isDoc) await documentPostSectionLoading(config);
+
+  await loadDeferred(area, areaBlocks, config);
+}
+
+function loadLana(options = {}) {
+  if (window.lana) return;
+
+  const lanaError = (e) => {
+    window.lana?.log(e.reason || e.error || e.message, { errorType: 'i' });
+  };
+
+  window.lana = {
+    log: async (...args) => {
+      window.removeEventListener('error', lanaError);
+      window.removeEventListener('unhandledrejection', lanaError);
+      await Promise.resolve().then(() => lana);
+      return window.lana.log(...args);
+    },
+    debug: false,
+    options,
+  };
+
+  window.addEventListener('error', lanaError);
+  window.addEventListener('unhandledrejection', lanaError);
+}
+
+const utils = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  MILO_EVENTS,
+  appendHtmlToCanonicalUrl,
+  appendHtmlToLink,
+  combineMepSources,
+  createTag: createTag$1,
+  decorateAutoBlock,
+  decorateFooterPromo,
+  decorateImageLinks,
+  decorateLinks,
+  decorateSVG,
+  filterDuplicatedLinkBlocks,
+  getConfig: getConfig$1,
+  getLocale,
+  getMepEnablement,
+  getMetadata: getMetadata$3,
+  loadArea,
+  loadBlock: loadBlock$2,
+  loadDeferred,
+  loadIms,
+  loadLana,
+  loadLink,
+  loadMartech,
+  loadScript: loadScript$1,
+  loadStyle: loadStyle$2,
+  loadTemplate,
+  localizeLink,
+  scrollToHashedElement,
+  setConfig: setConfig$1,
+  updateConfig
+}, Symbol.toStringTag, { value: 'Module' }));
+
 const INVALID_CHARACTERS = /[^\u00C0-\u1FFF\u2C00-\uD7FF\w]+/g;
 const LEAD_UNDERSCORES = /^_+|_+$/g;
 
@@ -247,6 +1518,7 @@ const allowedOrigins = [
   'https://business.adobe.com',
   'https://blog.adobe.com',
   'https://milo.adobe.com',
+  'https://news.adobe.com',
 ];
 
 const lanaLog = ({ message, e = '', tags = 'errorType=default' }) => {
@@ -348,7 +1620,7 @@ let fedsPlaceholderConfig;
 const getFedsPlaceholderConfig = ({ useCache = true } = {}) => {
   if (useCache && fedsPlaceholderConfig) return fedsPlaceholderConfig;
 
-  const { locale } = getConfig$1();
+  const { locale, placeholders } = getConfig$1();
   const libOrigin = getFederatedContentRoot();
 
   fedsPlaceholderConfig = {
@@ -356,6 +1628,7 @@ const getFedsPlaceholderConfig = ({ useCache = true } = {}) => {
       ...locale,
       contentRoot: `${libOrigin}${locale.prefix}/federal/globalnav`,
     },
+    placeholders,
   };
 
   return fedsPlaceholderConfig;
@@ -371,8 +1644,7 @@ function getAnalyticsValue(str, index) {
 }
 
 function getExperienceName() {
-  const nonMiloUrl = "https://main--milo--adobecom.hlx.page/drafts/snehal/fragments/my-gnav";
-  const experiencePath = nonMiloUrl || getMetadata$3('gnav-source');
+  const experiencePath = getMetadata$3('gnav-source');
   const explicitExperience = experiencePath?.split('/').pop();
   if (explicitExperience?.length
     && explicitExperience !== 'gnav') return explicitExperience;
@@ -397,7 +1669,7 @@ async function loadBaseStyles() {
   await loadStyles('base.css');
 }
 
-function loadBlock$2(path) {
+function loadBlock$1(path) {
   return import(path).then((module) => module.default);
 }
 
@@ -411,7 +1683,7 @@ async function loadDecorateMenu() {
   });
 
   const [{ decorateMenu, decorateLinkGroup }] = await Promise.all([
-    loadBlock$2('https://main--milo--adobecom.hlx.page/libs/blocks/global-navigation/utilities/menu/menu.js'),
+    loadBlock$1('./menu/menu.js'),
     loadStyles('utilities/menu/menu.css'),
   ]);
 
@@ -496,1223 +1768,6 @@ async function fetchAndProcessPlainHtml({ url, shouldDecorateLinks = true } = {}
   ];
 })();
 
-/* eslint-disable no-console */
-
-
-const MILO_TEMPLATES = [
-  '404',
-  'featured-story',
-];
-const MILO_BLOCKS = [
-  'accordion',
-  'action-item',
-  'action-scroller',
-  'adobetv',
-  'article-feed',
-  'article-header',
-  'aside',
-  'author-header',
-  'brick',
-  'bulk-publish',
-  'bulk-publish-v2',
-  'caas',
-  'caas-config',
-  'caas-marquee',
-  'caas-marquee-metadata',
-  'card',
-  'card-horizontal',
-  'card-metadata',
-  'carousel',
-  'chart',
-  'columns',
-  'faas',
-  'featured-article',
-  'figure',
-  'form',
-  'fragment',
-  'featured-article',
-  'global-footer',
-  'global-navigation',
-  'graybox',
-  'footer',
-  'gnav',
-  'how-to',
-  'icon-block',
-  'iframe',
-  'instagram',
-  'marketo',
-  'marquee',
-  'marquee-anchors',
-  'martech-metadata',
-  'media',
-  'merch',
-  'merch-card',
-  'merch-card-collection',
-  'merch-offers',
-  'mnemonic-list',
-  'mobile-app-banner',
-  'modal',
-  'modal-metadata',
-  'pdf-viewer',
-  'quote',
-  'read-more',
-  'recommended-articles',
-  'region-nav',
-  'review',
-  'section-metadata',
-  'slideshare',
-  'preflight',
-  'promo',
-  'quiz',
-  'quiz-entry',
-  'quiz-marquee',
-  'quiz-results',
-  'tabs',
-  'table-of-contents',
-  'text',
-  'walls-io',
-  'table',
-  'table-metadata',
-  'tags',
-  'tag-selector',
-  'tiktok',
-  'twitter',
-  'video',
-  'vimeo',
-  'youtube',
-  'z-pattern',
-  'share',
-  'reading-time',
-];
-const AUTO_BLOCKS = [
-  { adobetv: 'tv.adobe.com' },
-  { gist: 'https://gist.github.com' },
-  { caas: '/tools/caas' },
-  { faas: '/tools/faas' },
-  { fragment: '/fragments/' },
-  { instagram: 'https://www.instagram.com' },
-  { slideshare: 'https://www.slideshare.net' },
-  { tiktok: 'https://www.tiktok.com' },
-  { twitter: 'https://twitter.com' },
-  { vimeo: 'https://vimeo.com' },
-  { vimeo: 'https://player.vimeo.com' },
-  { youtube: 'https://www.youtube.com' },
-  { youtube: 'https://youtu.be' },
-  { 'pdf-viewer': '.pdf' },
-  { video: '.mp4' },
-  { merch: '/tools/ost?' },
-];
-const DO_NOT_INLINE = [
-  'accordion',
-  'columns',
-  'z-pattern',
-];
-
-const ENVS = {
-  stage: {
-    name: 'stage',
-    ims: 'stg1',
-    adobeIO: 'cc-collab-stage.adobe.io',
-    adminconsole: 'stage.adminconsole.adobe.com',
-    account: 'stage.account.adobe.com',
-    edgeConfigId: '8d2805dd-85bf-4748-82eb-f99fdad117a6',
-    pdfViewerClientId: '600a4521c23d4c7eb9c7b039bee534a0',
-  },
-  prod: {
-    name: 'prod',
-    ims: 'prod',
-    adobeIO: 'cc-collab.adobe.io',
-    adminconsole: 'adminconsole.adobe.com',
-    account: 'account.adobe.com',
-    edgeConfigId: '2cba807b-7430-41ae-9aac-db2b0da742d5',
-    pdfViewerClientId: '3c0a5ddf2cc04d3198d9e48efc390fa9',
-  },
-};
-ENVS.local = {
-  ...ENVS.stage,
-  name: 'local',
-};
-
-const MILO_EVENTS = { DEFERRED: 'milo:deferred' };
-
-const LANGSTORE = 'langstore';
-const PAGE_URL$1 = new URL(window.location.href);
-
-function getEnv(conf) {
-  const { host } = window.location;
-  const query = PAGE_URL$1.searchParams.get('env');
-
-  if (query) return { ...ENVS[query], consumer: conf[query] };
-  if (host.includes('localhost')) return { ...ENVS.local, consumer: conf.local };
-  /* c8 ignore start */
-  if (host.includes('hlx.page')
-    || host.includes('hlx.live')
-    || host.includes('stage.adobe')
-    || host.includes('corp.adobe')) {
-    return { ...ENVS.stage, consumer: conf.stage };
-  }
-  return { ...ENVS.prod, consumer: conf.prod };
-  /* c8 ignore stop */
-}
-
-function getLocale(locales, pathname = window.location.pathname) {
-  if (!locales) {
-    return { ietf: 'en-US', tk: 'hah7vzn.css', prefix: '' };
-  }
-  const split = pathname.split('/');
-  const localeString = split[1];
-  const locale = locales[localeString] || locales[''];
-  if (localeString === LANGSTORE) {
-    locale.prefix = `/${localeString}/${split[2]}`;
-    if (
-      Object.values(locales)
-        .find((loc) => loc.ietf?.startsWith(split[2]))?.dir === 'rtl'
-    ) locale.dir = 'rtl';
-    return locale;
-  }
-  const isUS = locale.ietf === 'en-US';
-  locale.prefix = isUS ? '' : `/${localeString}`;
-  locale.region = isUS ? 'us' : localeString.split('_')[0];
-  return locale;
-}
-
-function getMetadata$3(name, doc = document) {
-  const attr = name && name.includes(':') ? 'property' : 'name';
-  const meta = doc.head.querySelector(`meta[${attr}="${name}"]`);
-  return meta && meta.content;
-}
-
-const handleEntitlements = (() => {
-  let entResolve;
-  const entPromise = new Promise((resolve) => {
-    entResolve = resolve;
-  });
-
-  return (resolveVal) => {
-    if (resolveVal !== undefined) {
-      entResolve(resolveVal);
-    }
-    return entPromise;
-  };
-})();
-
-function setupMiloObj(config) {
-  window.milo ||= {};
-  window.milo.deferredPromise = new Promise((resolve) => {
-    config.resolveDeferred = resolve;
-  });
-}
-
-const [setConfig$1, updateConfig, getConfig$1] = (() => {
-  let config = {};
-  return [
-    (conf) => {
-      const origin = conf.origin || window.location.origin;
-      const pathname = conf.pathname || window.location.pathname;
-      config = { env: getEnv(conf), ...conf };
-      config.codeRoot = conf.codeRoot ? `${origin}${conf.codeRoot}` : origin;
-      config.base = config.miloLibs || config.codeRoot;
-      config.locale = pathname ? getLocale(conf.locales, pathname) : getLocale(conf.locales);
-      config.autoBlocks = conf.autoBlocks ? [...AUTO_BLOCKS, ...conf.autoBlocks] : AUTO_BLOCKS;
-      config.doNotInline = conf.doNotInline
-        ? [...DO_NOT_INLINE, ...conf.doNotInline]
-        : DO_NOT_INLINE;
-      const lang = getMetadata$3('content-language') || config.locale.ietf;
-      document.documentElement.setAttribute('lang', lang);
-      try {
-        const dir = getMetadata$3('content-direction')
-          || config.locale.dir
-          || (config.locale.ietf && (new Intl.Locale(config.locale.ietf)?.textInfo?.direction))
-          || 'ltr';
-        document.documentElement.setAttribute('dir', dir);
-      } catch (e) {
-        console.log('Invalid or missing locale:', e);
-      }
-      config.locale.contentRoot = `${origin}${config.locale.prefix}${config.contentRoot ?? ''}`;
-      config.useDotHtml = !PAGE_URL$1.origin.includes('.hlx.')
-        && (conf.useDotHtml ?? PAGE_URL$1.pathname.endsWith('.html'));
-      config.entitlements = handleEntitlements;
-      config.consumerEntitlements = conf.entitlements || [];
-      setupMiloObj(config);
-      return config;
-    },
-    (conf) => (config = conf),
-    () => config,
-  ];
-})();
-
-function createTag$1(tag, attributes, html, options = {}) {
-  const el = document.createElement(tag);
-  if (html) {
-    if (html instanceof HTMLElement
-      || html instanceof SVGElement
-      || html instanceof DocumentFragment) {
-      el.append(html);
-    } else if (Array.isArray(html)) {
-      el.append(...html);
-    } else {
-      el.insertAdjacentHTML('beforeend', html);
-    }
-  }
-  if (attributes) {
-    Object.entries(attributes).forEach(([key, val]) => {
-      el.setAttribute(key, val);
-    });
-  }
-  options.parent?.append(el);
-  return el;
-}
-
-function getExtension(path) {
-  const pageName = path.split('/').pop();
-  return pageName.includes('.') ? pageName.split('.').pop() : '';
-}
-
-function localizeLink(
-  href,
-  originHostName = window.location.hostname,
-  overrideDomain = false,
-) {
-  try {
-    const url = new URL(href);
-    const relative = url.hostname === originHostName;
-    const processedHref = relative ? href.replace(url.origin, '') : href;
-    const { hash } = url;
-    if (hash.includes('#_dnt')) return processedHref.replace('#_dnt', '');
-    const path = url.pathname;
-    const extension = getExtension(path);
-    const allowedExts = ['', 'html', 'json'];
-    if (!allowedExts.includes(extension)) return processedHref;
-    const { locale, locales, prodDomains } = getConfig$1();
-    if (!locale || !locales) return processedHref;
-    const isLocalizable = relative || (prodDomains && prodDomains.includes(url.hostname))
-      || overrideDomain;
-    if (!isLocalizable) return processedHref;
-    const isLocalizedLink = path.startsWith(`/${LANGSTORE}`) || Object.keys(locales)
-      .some((loc) => loc !== '' && (path.startsWith(`/${loc}/`) || path.endsWith(`/${loc}`)));
-    if (isLocalizedLink) return processedHref;
-    const urlPath = `${locale.prefix}${path}${url.search}${hash}`;
-    return relative ? urlPath : `${url.origin}${urlPath}`;
-  } catch (error) {
-    return href;
-  }
-}
-
-function loadLink(href, { as, callback, crossorigin, rel, fetchpriority } = {}) {
-  let link = document.head.querySelector(`link[href="${href}"]`);
-  if (!link) {
-    link = document.createElement('link');
-    link.setAttribute('rel', rel);
-    if (as) link.setAttribute('as', as);
-    if (crossorigin) link.setAttribute('crossorigin', crossorigin);
-    if (fetchpriority) link.setAttribute('fetchpriority', fetchpriority);
-    link.setAttribute('href', href);
-    if (callback) {
-      link.onload = (e) => callback(e.type);
-      link.onerror = (e) => callback(e.type);
-    }
-    document.head.appendChild(link);
-  } else if (callback) {
-    callback('noop');
-  }
-  return link;
-}
-
-function loadStyle$2(href, callback) {
-  return loadLink(href, { rel: 'stylesheet', callback });
-}
-
-function appendHtmlToCanonicalUrl() {
-  const { useDotHtml } = getConfig$1();
-  if (!useDotHtml) return;
-  const canonEl = document.head.querySelector('link[rel="canonical"]');
-  if (!canonEl) return;
-  const canonUrl = new URL(canonEl.href);
-  if (canonUrl.pathname.endsWith('/') || canonUrl.pathname.endsWith('.html')) return;
-  const pagePath = PAGE_URL$1.pathname.replace('.html', '');
-  if (pagePath !== canonUrl.pathname) return;
-  canonEl.setAttribute('href', `${canonEl.href}.html`);
-}
-
-function appendHtmlToLink(link) {
-  const { useDotHtml } = getConfig$1();
-  if (!useDotHtml) return;
-  const href = link.getAttribute('href');
-  if (!href?.length) return;
-
-  const { autoBlocks = [], htmlExclude = [] } = getConfig$1();
-
-  const HAS_EXTENSION = /\..*$/;
-  let url = { pathname: href };
-
-  try { url = new URL(href, PAGE_URL$1); } catch (e) { /* do nothing */ }
-
-  if (!(href.startsWith('/') || href.startsWith(PAGE_URL$1.origin))
-    || url.pathname?.endsWith('/')
-    || href === PAGE_URL$1.origin
-    || HAS_EXTENSION.test(href.split('/').pop())
-    || htmlExclude?.some((excludeRe) => excludeRe.test(href))) {
-    return;
-  }
-
-  const relativeAutoBlocks = autoBlocks
-    .map((b) => Object.values(b)[0])
-    .filter((b) => b.startsWith('/'));
-  const isAutoblockLink = relativeAutoBlocks.some((block) => href.includes(block));
-  if (isAutoblockLink) return;
-
-  try {
-    const linkUrl = new URL(href.startsWith('http') ? href : `${PAGE_URL$1.origin}${href}`);
-    if (linkUrl.pathname && !linkUrl.pathname.endsWith('.html')) {
-      linkUrl.pathname = `${linkUrl.pathname}.html`;
-      link.setAttribute('href', href.startsWith('/')
-        ? `${linkUrl.pathname}${linkUrl.search}${linkUrl.hash}`
-        : linkUrl.href);
-    }
-  } catch (e) {
-    window.lana?.log(`Error while attempting to append '.html' to ${link}: ${e}`);
-  }
-}
-
-const loadScript$1 = (url, type) => new Promise((resolve, reject) => {
-  let script = document.querySelector(`head > script[src="${url}"]`);
-  if (!script) {
-    const { head } = document;
-    script = document.createElement('script');
-    script.setAttribute('src', url);
-    if (type) {
-      script.setAttribute('type', type);
-    }
-    head.append(script);
-  }
-
-  if (script.dataset.loaded) {
-    resolve(script);
-    return;
-  }
-
-  const onScript = (event) => {
-    script.removeEventListener('load', onScript);
-    script.removeEventListener('error', onScript);
-
-    if (event.type === 'error') {
-      reject(new Error(`error loading script: ${script.src}`));
-    } else if (event.type === 'load') {
-      script.dataset.loaded = true;
-      resolve(script);
-    }
-  };
-
-  script.addEventListener('load', onScript);
-  script.addEventListener('error', onScript);
-});
-
-async function loadTemplate() {
-  const template = getMetadata$3('template');
-  if (!template) return;
-  const name = template.toLowerCase().replace(/[^0-9a-z]/gi, '-');
-  document.body.classList.add(name);
-  const { miloLibs, codeRoot } = getConfig$1();
-  const base = miloLibs && MILO_TEMPLATES.includes(name) ? miloLibs : codeRoot;
-  const styleLoaded = new Promise((resolve) => {
-    loadStyle$2(`${base}/templates/${name}/${name}.css`, resolve);
-  });
-  const scriptLoaded = new Promise((resolve) => {
-    (async () => {
-      try {
-        await import(`${base}/templates/${name}/${name}.js`);
-      } catch (err) {
-        console.log(`failed to load module for ${name}`, err);
-      }
-      resolve();
-    })();
-  });
-  await Promise.all([styleLoaded, scriptLoaded]);
-}
-
-async function loadBlock$1(block) {
-  if (block.classList.contains('hide-block')) {
-    block.remove();
-    return null;
-  }
-
-  const name = block.classList[0];
-  const { miloLibs, codeRoot, mep } = getConfig$1();
-
-  const base = miloLibs && MILO_BLOCKS.includes(name) ? miloLibs : codeRoot;
-  let path = `${base}/blocks/${name}`;
-
-  if (mep?.blocks?.[name]) path = mep.blocks[name];
-
-  const blockPath = `${path}/${name}`;
-
-  const styleLoaded = new Promise((resolve) => {
-    loadStyle$2(`${blockPath}.css`, resolve);
-  });
-
-  const scriptLoaded = new Promise((resolve) => {
-    (async () => {
-      try {
-        const { default: init } = await import(`${blockPath}.js`);
-        await init(block);
-      } catch (err) {
-        console.log(`Failed loading ${name}`, err);
-        const config = getConfig$1();
-        if (config.env.name !== 'prod') {
-          const { showError } = await Promise.resolve().then(() => fallback);
-          showError(block, name);
-        }
-      }
-      resolve();
-    })();
-  });
-  await Promise.all([styleLoaded, scriptLoaded]);
-  return block;
-}
-
-function decorateSVG(a) {
-  const { textContent, href } = a;
-  if (!(textContent.includes('.svg') || href.includes('.svg'))) return a;
-  try {
-    // Mine for URL and alt text
-    const splitText = textContent.split('|');
-    const textUrl = new URL(splitText.shift().trim());
-    const altText = splitText.join('|').trim();
-
-    // Relative link checking
-    const hrefUrl = a.href.startsWith('/')
-      ? new URL(`${window.location.origin}${a.href}`)
-      : new URL(a.href);
-
-    const src = textUrl.hostname.includes('.hlx.') ? textUrl.pathname : textUrl;
-
-    const img = createTag$1('img', { loading: 'lazy', src });
-    if (altText) img.alt = altText;
-    const pic = createTag$1('picture', null, img);
-
-    if (textUrl.pathname === hrefUrl.pathname) {
-      a.parentElement.replaceChild(pic, a);
-      return pic;
-    }
-    a.textContent = '';
-    a.append(pic);
-    return a;
-  } catch (e) {
-    console.log('Failed to create SVG.', e.message);
-    return a;
-  }
-}
-
-function decorateImageLinks(el) {
-  const images = el.querySelectorAll('img[alt*="|"]');
-  if (!images.length) return;
-  [...images].forEach((img) => {
-    const [source, alt, icon] = img.alt.split('|');
-    try {
-      const url = new URL(source.trim());
-      const href = url.hostname.includes('.hlx.') ? `${url.pathname}${url.hash}` : url.href;
-      if (alt?.trim().length) img.alt = alt.trim();
-      const pic = img.closest('picture');
-      const picParent = pic.parentElement;
-      if (href.includes('.mp4')) {
-        const a = createTag$1('a', { href: url, 'data-video-poster': img.src });
-        a.innerHTML = url;
-        pic.replaceWith(a);
-      } else {
-        const aTag = createTag$1('a', { href, class: 'image-link' });
-        picParent.insertBefore(aTag, pic);
-        if (icon) {
-          Promise.resolve().then(() => imageVideoLink).then((mod) => mod.default(picParent, aTag, icon));
-        } else {
-          aTag.append(pic);
-        }
-      }
-    } catch (e) {
-      console.log('Error:', `${e.message} '${source.trim()}'`);
-    }
-  });
-}
-
-function decorateAutoBlock(a) {
-  const config = getConfig$1();
-  const { hostname } = window.location;
-  let url;
-  try {
-    url = new URL(a.href);
-  } catch (e) {
-    window.lana?.log(`Cannot make URL from decorateAutoBlock - ${a?.href}: ${e.toString()}`);
-    return false;
-  }
-
-  const href = hostname === url.hostname
-    ? `${url.pathname}${url.search}${url.hash}`
-    : a.href;
-
-  return config.autoBlocks.find((candidate) => {
-    const key = Object.keys(candidate)[0];
-    const match = href.includes(candidate[key]);
-    if (!match) return false;
-
-    if (key === 'pdf-viewer' && !a.textContent.includes('.pdf')) {
-      a.target = '_blank';
-      return false;
-    }
-
-    const hasExtension = a.href.split('/').pop().includes('.');
-    const mp4Match = a.textContent.match('media_.*.mp4');
-    if (key === 'fragment' && (!hasExtension || mp4Match)) {
-      if (a.href === window.location.href) {
-        return false;
-      }
-
-      const isInlineFrag = url.hash.includes('#_inline');
-      if (url.hash === '' || isInlineFrag) {
-        const { parentElement } = a;
-        const { nodeName, innerHTML } = parentElement;
-        const noText = innerHTML === a.outerHTML;
-        if (noText && nodeName === 'P') {
-          const div = createTag$1('div', null, a);
-          parentElement.parentElement.replaceChild(div, parentElement);
-        }
-      }
-
-      // previewing a fragment page with mp4 video
-      if (mp4Match) {
-        a.className = 'video link-block';
-        return false;
-      }
-
-      // Modals
-      if (url.hash !== '' && !isInlineFrag) {
-        a.dataset.modalPath = url.pathname;
-        a.dataset.modalHash = url.hash;
-        a.href = url.hash;
-        a.className = `modal link-block ${[...a.classList].join(' ')}`;
-        return true;
-      }
-    }
-
-    // slack uploaded mp4s
-    if (key === 'video' && !a.textContent.match('media_.*.mp4')) {
-      return false;
-    }
-
-    a.className = `${key} link-block`;
-    return true;
-  });
-}
-
-function decorateLinks(el) {
-  decorateImageLinks(el);
-  const anchors = el.getElementsByTagName('a');
-  return [...anchors].reduce((rdx, a) => {
-    appendHtmlToLink(a);
-    a.href = localizeLink(a.href);
-    decorateSVG(a);
-    if (a.href.includes('#_blank')) {
-      a.setAttribute('target', '_blank');
-      a.href = a.href.replace('#_blank', '');
-    }
-    if (a.href.includes('#_dnb')) {
-      a.href = a.href.replace('#_dnb', '');
-    } else {
-      const autoBlock = decorateAutoBlock(a);
-      if (autoBlock) {
-        rdx.push(a);
-      }
-    }
-    return rdx;
-  }, []);
-}
-
-function decorateContent(el) {
-  const children = [el];
-  let child = el;
-  while (child) {
-    child = child.nextElementSibling;
-    if (child && child.nodeName !== 'DIV') {
-      children.push(child);
-    } else {
-      break;
-    }
-  }
-  const block = document.createElement('div');
-  block.className = 'content';
-  block.append(...children);
-  block.dataset.block = '';
-  return block;
-}
-
-function decorateDefaults(el) {
-  const firstChild = ':scope > *:not(div):first-child';
-  const afterBlock = ':scope > div + *:not(div)';
-  const children = el.querySelectorAll(`${firstChild}, ${afterBlock}`);
-  children.forEach((child) => {
-    const prev = child.previousElementSibling;
-    const content = decorateContent(child);
-    if (prev) {
-      prev.insertAdjacentElement('afterend', content);
-    } else {
-      el.insertAdjacentElement('afterbegin', content);
-    }
-  });
-}
-
-function decorateHeader() {
-  const header = document.querySelector('header');
-  if (!header) return;
-  const headerMeta = getMetadata$3('header');
-  if (headerMeta === 'off') {
-    document.body.classList.add('nav-off');
-    header.remove();
-    return;
-  }
-  header.className = headerMeta || 'gnav';
-  const metadataConfig = getMetadata$3('breadcrumbs')?.toLowerCase()
-  || getConfig$1().breadcrumbs;
-  if (metadataConfig === 'off') return;
-  const baseBreadcrumbs = getMetadata$3('breadcrumbs-base')?.length;
-  const breadcrumbs = document.querySelector('.breadcrumbs');
-  const autoBreadcrumbs = getMetadata$3('breadcrumbs-from-url') === 'on';
-  if (baseBreadcrumbs || breadcrumbs || autoBreadcrumbs) header.classList.add('has-breadcrumbs');
-  if (breadcrumbs) header.append(breadcrumbs);
-  const promo = getMetadata$3('gnav-promo-source');
-  if (promo?.length) header.classList.add('has-promo');
-}
-
-async function decorateIcons(area, config) {
-  const icons$1 = area.querySelectorAll('span.icon');
-  if (icons$1.length === 0) return;
-  const { miloLibs, codeRoot } = config;
-  const base = miloLibs || codeRoot;
-  await new Promise((resolve) => { loadStyle$2(`${base}/features/icons/icons.css`, resolve); });
-  const { default: loadIcons } = await Promise.resolve().then(() => icons);
-  await loadIcons(icons$1, config);
-}
-
-async function decoratePlaceholders(area, config) {
-  const el = area.querySelector('main') || area;
-  const regex = /{{(.*?)}}|%7B%7B(.*?)%7D%7D/g;
-  const found = regex.test(el.innerHTML);
-  if (!found) return;
-  const { replaceText } = await Promise.resolve().then(() => placeholders);
-  el.innerHTML = await replaceText(el.innerHTML, config, regex);
-}
-
-async function loadFooter() {
-  const footer = document.querySelector('footer');
-  if (!footer) return;
-  const footerMeta = getMetadata$3('footer');
-  if (footerMeta === 'off') {
-    footer.remove();
-    return;
-  }
-  footer.className = footerMeta || 'footer';
-  await loadBlock$1(footer);
-}
-
-function filterDuplicatedLinkBlocks(blocks) {
-  if (!blocks?.length) return [];
-  const uniqueModalKeys = new Set();
-  const uniqueBlocks = [];
-  for (const obj of blocks) {
-    if (obj.className.includes('modal')) {
-      const key = `${obj.dataset.modalHash}-${obj.dataset.modalPath}`;
-      if (!uniqueModalKeys.has(key)) {
-        uniqueModalKeys.add(key);
-        uniqueBlocks.push(obj);
-      }
-    } else {
-      uniqueBlocks.push(obj);
-    }
-  }
-  return uniqueBlocks;
-}
-
-function decorateSection(section, idx) {
-  let links = decorateLinks(section);
-  decorateDefaults(section);
-  const blocks = section.querySelectorAll(':scope > div[class]:not(.content)');
-
-  const { doNotInline } = getConfig$1();
-  const blockLinks = [...blocks].reduce((blkLinks, block) => {
-    const blockName = block.classList[0];
-    links.filter((link) => block.contains(link))
-      .forEach((link) => {
-        if (link.classList.contains('fragment')
-          && MILO_BLOCKS.includes(blockName) // do not inline consumer blocks (for now)
-          && !doNotInline.includes(blockName)) {
-          if (!link.href.includes('#_inline')) {
-            link.href = `${link.href}#_inline`;
-          }
-          blkLinks.inlineFrags.push(link);
-        } else if (link.classList.contains('link-block')) {
-          blkLinks.autoBlocks.push(link);
-        }
-      });
-    return blkLinks;
-  }, { inlineFrags: [], autoBlocks: [] });
-
-  const embeddedLinks = [...blockLinks.inlineFrags, ...blockLinks.autoBlocks];
-  if (embeddedLinks.length) {
-    links = links.filter((link) => !embeddedLinks.includes(link));
-  }
-  section.className = 'section';
-  section.dataset.status = 'decorated';
-  section.dataset.idx = idx;
-  return {
-    blocks: [...links, ...blocks],
-    el: section,
-    idx,
-    preloadLinks: filterDuplicatedLinkBlocks(blockLinks.autoBlocks),
-  };
-}
-
-function decorateSections(el, isDoc) {
-  const selector = isDoc ? 'body > main > div' : ':scope > div';
-  return [...el.querySelectorAll(selector)].map(decorateSection);
-}
-
-async function decorateFooterPromo(doc = document) {
-  const footerPromoTag = getMetadata$3('footer-promo-tag', doc);
-  const footerPromoType = getMetadata$3('footer-promo-type', doc);
-  if (!footerPromoTag && footerPromoType !== 'taxonomy') return;
-
-  const { default: initFooterPromo } = await Promise.resolve().then(() => footerPromo);
-  await initFooterPromo(footerPromoTag, footerPromoType, doc);
-}
-
-let imsLoaded;
-async function loadIms() {
-  imsLoaded = imsLoaded || new Promise((resolve, reject) => {
-    const { locale, imsClientId, imsScope, env, base } = getConfig$1();
-    if (!imsClientId) {
-      reject(new Error('Missing IMS Client ID'));
-      return;
-    }
-    const [unavMeta, ahomeMeta] = [getMetadata$3('universal-nav')?.trim(), getMetadata$3('adobe-home-redirect')];
-    const defaultScope = `AdobeID,openid,gnav${unavMeta && unavMeta !== 'off' ? ',pps.read,firefly_api,additional_info.roles,read_organizations' : ''}`;
-    const timeout = setTimeout(() => reject(new Error('IMS timeout')), 5000);
-    window.adobeid = {
-      client_id: imsClientId,
-      scope: imsScope || defaultScope,
-      locale: locale?.ietf?.replace('-', '_') || 'en_US',
-      redirect_uri: ahomeMeta === 'on'
-        ? `https://www${env.name !== 'prod' ? '.stage' : ''}.adobe.com${locale.prefix}` : undefined,
-      autoValidateToken: true,
-      environment: env.ims,
-      useLocalStorage: false,
-      onReady: () => {
-        resolve();
-        clearTimeout(timeout);
-      },
-      onError: reject,
-    };
-    const path = PAGE_URL$1.searchParams.get('useAlternateImsDomain')
-      ? 'https://auth.services.adobe.com/imslib/imslib.min.js'
-      : `https://main--milo--adobecom.hlx.page/libs/deps/imslib.min.js`;
-    loadScript$1(path);
-  }).then(() => {
-    if (!window.adobeIMS?.isSignedInUser()) {
-      getConfig$1().entitlements([]);
-    }
-  });
-
-  return imsLoaded;
-}
-
-async function loadMartech({ persEnabled = false, persManifests = [] } = {}) {
-  // eslint-disable-next-line no-underscore-dangle
-  if (window.marketingtech?.adobe?.launch && window._satellite) {
-    return true;
-  }
-
-  const query = PAGE_URL$1.searchParams.get('martech');
-  if (query === 'off' || getMetadata$3('martech') === 'off') {
-    return false;
-  }
-
-  window.targetGlobalSettings = { bodyHidingEnabled: false };
-  loadIms().catch(() => {});
-
-  const { default: initMartech } = await Promise.resolve().then(() => martech);
-  await initMartech({ persEnabled, persManifests });
-
-  return true;
-}
-
-const getMepValue = (val) => {
-  const valMap = { on: true, off: false, gnav: 'gnav' };
-  const finalVal = val?.toLowerCase().trim();
-  if (finalVal in valMap) return valMap[finalVal];
-  return finalVal;
-};
-
-const getMepEnablement = (mdKey, paramKey = false) => {
-  const paramValue = PAGE_URL$1.searchParams.get(paramKey || mdKey);
-  if (paramValue) return getMepValue(paramValue);
-  const mdValue = getMetadata$3(mdKey);
-  if (!mdValue) return false;
-  return getMepValue(mdValue);
-};
-
-const combineMepSources = async (persEnabled, promoEnabled, mepParam) => {
-  let persManifests = [];
-
-  if (persEnabled) {
-    persManifests = persEnabled.toLowerCase()
-      .split(/,|(\s+)|(\\n)/g)
-      .filter((path) => path?.trim())
-      .map((manifestPath) => ({ manifestPath }));
-  }
-
-  if (promoEnabled) {
-    const { default: getPromoManifests } = await Promise.resolve().then(() => promoUtils);
-    persManifests = persManifests.concat(getPromoManifests(promoEnabled, PAGE_URL$1.searchParams));
-  }
-
-  if (mepParam && mepParam !== 'off') {
-    const persManifestPaths = persManifests.map((manifest) => {
-      const { manifestPath } = manifest;
-      if (manifestPath.startsWith('/')) return manifestPath;
-      try {
-        const url = new URL(manifestPath);
-        return url.pathname;
-      } catch (e) {
-        return manifestPath;
-      }
-    });
-
-    mepParam.split('---').forEach((manifestPair) => {
-      const manifestPath = manifestPair.trim().toLowerCase().split('--')[0];
-      if (!persManifestPaths.includes(manifestPath)) {
-        persManifests.push({ manifestPath });
-      }
-    });
-  }
-  return persManifests;
-};
-
-async function checkForPageMods() {
-  const { mep: mepParam } = Object.fromEntries(PAGE_URL$1.searchParams);
-  if (mepParam === 'off') return;
-  const persEnabled = getMepEnablement('personalization');
-  const promoEnabled = getMepEnablement('manifestnames', 'promo');
-  const targetEnabled = getMepEnablement('target');
-  const mepEnabled = persEnabled || targetEnabled || promoEnabled || mepParam;
-  if (!mepEnabled) return;
-
-  const config = getConfig$1();
-  config.mep = { targetEnabled };
-  loadLink(
-    `${config.base}/features/personalization/personalization.js`,
-    { as: 'script', rel: 'modulepreload' },
-  );
-
-  const persManifests = await combineMepSources(persEnabled, promoEnabled, mepParam);
-  if (targetEnabled === true) {
-    await loadMartech({ persEnabled: true, persManifests, targetEnabled });
-    return;
-  }
-  if (!persManifests.length) return;
-
-  loadIms()
-    .then(() => {
-      if (window.adobeIMS.isSignedInUser()) loadMartech();
-    })
-    .catch((e) => { console.log('Unable to load IMS:', e); });
-
-  const { preloadManifests, applyPers } = await Promise.resolve().then(() => personalization);
-  const manifests = preloadManifests({ persManifests }, { getConfig: getConfig$1, loadLink });
-
-  await applyPers(manifests);
-}
-
-async function loadPostLCP(config) {
-  const georouting = getMetadata$3('georouting') || config.geoRouting;
-  if (georouting === 'on') {
-    const { default: loadGeoRouting } = await Promise.resolve().then(() => georoutingv2);
-    await loadGeoRouting(config, createTag$1, getMetadata$3, loadBlock$1, loadStyle$2);
-  }
-  if (config.mep?.targetEnabled === 'gnav') {
-    await loadMartech({ persEnabled: true, postLCP: true });
-  } else {
-    loadMartech();
-  }
-  const header = document.querySelector('header');
-  if (header) {
-    header.classList.add('gnav-hide');
-    await loadBlock$1(header);
-    header.classList.remove('gnav-hide');
-  }
-  loadTemplate();
-  const { default: loadFonts } = await Promise.resolve().then(() => fonts);
-  loadFonts(config.locale, loadStyle$2);
-  if (config.mep?.preview) {
-    Promise.resolve().then(() => preview)
-      .then(({ default: decoratePreviewMode }) => decoratePreviewMode());
-  }
-}
-
-function scrollToHashedElement(hash) {
-  if (!hash) return;
-  const elementId = decodeURIComponent(hash).slice(1);
-  let targetElement;
-  try {
-    targetElement = document.querySelector(`#${elementId}:not(.dialog-modal)`);
-  } catch (e) {
-    window.lana?.log(`Could not query element because of invalid hash - ${elementId}: ${e.toString()}`);
-  }
-  if (!targetElement) return;
-  const bufferHeight = document.querySelector('.global-navigation')?.offsetHeight || 0;
-  const topOffset = targetElement.getBoundingClientRect().top + window.pageYOffset;
-  window.scrollTo({
-    top: topOffset - bufferHeight,
-    behavior: 'smooth',
-  });
-}
-
-async function loadDeferred(area, blocks, config) {
-  const event = new Event(MILO_EVENTS.DEFERRED);
-  area.dispatchEvent(event);
-
-  if (area !== document) {
-    return;
-  }
-
-  config.resolveDeferred?.(true);
-
-  if (config.links === 'on') {
-    const path = `${config.contentRoot || ''}${getMetadata$3('links-path') || '/seo/links.json'}`;
-    Promise.resolve().then(() => links).then((mod) => mod.default(path, area));
-  }
-
-  if (config.locale?.ietf === 'ja-JP') {
-    // Japanese word-wrap
-    Promise.resolve().then(() => japaneseWordWrap).then(({ default: controlJapaneseLineBreaks }) => {
-      controlJapaneseLineBreaks(config, area);
-    });
-  }
-
-  Promise.resolve().then(() => samplerum).then(({ sampleRUM }) => {
-    sampleRUM('lazy');
-    sampleRUM.observe(blocks);
-    sampleRUM.observe(area.querySelectorAll('picture > img'));
-  });
-}
-
-function initSidekick() {
-  const initPlugins = async () => {
-    const { default: init } = await Promise.resolve().then(() => sidekick);
-    init({ createTag: createTag$1, loadBlock: loadBlock$1, loadScript: loadScript$1, loadStyle: loadStyle$2 });
-  };
-
-  if (document.querySelector('helix-sidekick')) {
-    initPlugins();
-  } else {
-    document.addEventListener('sidekick-ready', () => {
-      initPlugins();
-    });
-  }
-}
-
-function decorateMeta() {
-  const { origin } = window.location;
-  const contents = document.head.querySelectorAll('[content*=".hlx."]');
-  contents.forEach((meta) => {
-    if (meta.getAttribute('property') === 'hlx:proxyUrl') return;
-    try {
-      const url = new URL(meta.content);
-      const localizedLink = localizeLink(`${origin}${url.pathname}`);
-      const localizedURL = localizedLink.includes(origin) ? localizedLink : `${origin}${localizedLink}`;
-      meta.setAttribute('content', `${localizedURL}${url.search}${url.hash}`);
-    } catch (e) {
-      window.lana?.log(`Cannot make URL from metadata - ${meta.content}: ${e.toString()}`);
-    }
-  });
-
-  // Event-based modal
-  window.addEventListener('modal:open', async (e) => {
-    const { miloLibs } = getConfig$1();
-    const { findDetails, getModal } = await Promise.resolve().then(() => modal);
-    loadStyle$2(`${miloLibs}/blocks/modal/modal.css`);
-    const details = findDetails(e.detail.hash);
-    if (details) getModal(details);
-  });
-}
-
-function decorateDocumentExtras() {
-  decorateMeta();
-  decorateHeader();
-
-  Promise.resolve().then(() => samplerum).then(({ addRumListeners }) => {
-    addRumListeners();
-  });
-}
-
-async function documentPostSectionLoading(config) {
-  decorateFooterPromo();
-
-  const appendage = getMetadata$3('title-append');
-  if (appendage) {
-    Promise.resolve().then(() => titleAppend$1).then((module) => module.default(appendage));
-  }
-  if (getMetadata$3('seotech-structured-data') === 'on' || getMetadata$3('seotech-video-url')) {
-    Promise.resolve().then(() => seotech).then((module) => module.default(
-      { locationUrl: window.location.href, getMetadata: getMetadata$3, createTag: createTag$1, getConfig: getConfig$1 },
-    ));
-  }
-  const richResults = getMetadata$3('richresults');
-  if (richResults) {
-    const { default: addRichResults } = await Promise.resolve().then(() => richresults);
-    addRichResults(richResults, { createTag: createTag$1, getMetadata: getMetadata$3 });
-  }
-  loadFooter();
-  const { default: loadFavIcon } = await Promise.resolve().then(() => favicon);
-  loadFavIcon(createTag$1, getConfig$1(), getMetadata$3);
-  if (config.experiment?.selectedVariant?.scripts?.length) {
-    config.experiment.selectedVariant.scripts.forEach((script) => loadScript$1(script));
-  }
-  initSidekick();
-
-  const { default: delayed$1 } = await Promise.resolve().then(() => delayed);
-  delayed$1([getConfig$1, getMetadata$3, loadScript$1, loadStyle$2, loadIms]);
-
-  Promise.resolve().then(() => attributes).then((analytics) => {
-    document.querySelectorAll('main > div').forEach((section, idx) => analytics.decorateSectionAnalytics(section, idx, config));
-  });
-
-  document.body.appendChild(createTag$1('div', { id: 'page-load-ok-milo', style: 'display: none;' }));
-}
-
-async function processSection(section, config, isDoc) {
-  const inlineFrags = [...section.el.querySelectorAll('a[href*="#_inline"]')];
-  if (inlineFrags.length) {
-    const { default: loadInlineFrags } = await Promise.resolve().then(() => fragment);
-    const fragPromises = inlineFrags.map((link) => loadInlineFrags(link));
-    await Promise.all(fragPromises);
-    await decoratePlaceholders(section.el, config);
-    const newlyDecoratedSection = decorateSection(section.el, section.idx);
-    section.blocks = newlyDecoratedSection.blocks;
-    section.preloadLinks = newlyDecoratedSection.preloadLinks;
-  }
-
-  if (section.preloadLinks.length) {
-    const preloads = section.preloadLinks.map((block) => loadBlock$1(block));
-    await Promise.all(preloads);
-  }
-
-  const loaded = section.blocks.map((block) => loadBlock$1(block));
-
-  await decorateIcons(section.el, config);
-
-  // Only move on to the next section when all blocks are loaded.
-  await Promise.all(loaded);
-
-  // Show the section when all blocks inside are done.
-  delete section.el.dataset.status;
-
-  if (isDoc && section.el.dataset.idx === '0') {
-    await loadPostLCP(config);
-  }
-
-  delete section.el.dataset.idx;
-
-  return section.blocks;
-}
-
-async function loadArea(area = document) {
-  const isDoc = area === document;
-
-  if (isDoc) {
-    await checkForPageMods();
-    appendHtmlToCanonicalUrl();
-  }
-  const config = getConfig$1();
-
-  await decoratePlaceholders(area, config);
-
-  if (isDoc) {
-    decorateDocumentExtras();
-  }
-
-  const sections = decorateSections(area, isDoc);
-
-  const areaBlocks = [];
-  for (const section of sections) {
-    const sectionBlocks = await processSection(section, config, isDoc);
-    areaBlocks.push(...sectionBlocks);
-
-    areaBlocks.forEach((block) => {
-      if (!block.className.includes('metadata')) block.dataset.block = '';
-    });
-  }
-
-  const currentHash = window.location.hash;
-  if (currentHash) {
-    scrollToHashedElement(currentHash);
-  }
-
-  if (isDoc) await documentPostSectionLoading(config);
-
-  await loadDeferred(area, areaBlocks, config);
-}
-
-function loadLana(options = {}) {
-  if (window.lana) return;
-
-  const lanaError = (e) => {
-    window.lana?.log(e.reason || e.error || e.message, { errorType: 'i' });
-  };
-
-  window.lana = {
-    log: async (...args) => {
-      window.removeEventListener('error', lanaError);
-      window.removeEventListener('unhandledrejection', lanaError);
-      await Promise.resolve().then(() => lana);
-      return window.lana.log(...args);
-    },
-    debug: false,
-    options,
-  };
-
-  window.addEventListener('error', lanaError);
-  window.addEventListener('unhandledrejection', lanaError);
-}
-
-const utils = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  MILO_EVENTS,
-  appendHtmlToCanonicalUrl,
-  appendHtmlToLink,
-  combineMepSources,
-  createTag: createTag$1,
-  decorateAutoBlock,
-  decorateFooterPromo,
-  decorateImageLinks,
-  decorateLinks,
-  decorateSVG,
-  filterDuplicatedLinkBlocks,
-  getConfig: getConfig$1,
-  getLocale,
-  getMepEnablement,
-  getMetadata: getMetadata$3,
-  loadArea,
-  loadBlock: loadBlock$1,
-  loadDeferred,
-  loadIms,
-  loadLana,
-  loadLink,
-  loadMartech,
-  loadScript: loadScript$1,
-  loadStyle: loadStyle$2,
-  loadTemplate,
-  localizeLink,
-  scrollToHashedElement,
-  setConfig: setConfig$1,
-  updateConfig
-}, Symbol.toStringTag, { value: 'Module' }));
-
 /* eslint-disable no-async-promise-executor */
 
 const { miloLibs, codeRoot, locale, mep } = getConfig$1();
@@ -1759,8 +1814,7 @@ class Footer {
 
   decorateContent = () => logErrorFor(async () => {
     // Fetch footer content
-    const nonMiloFooterUrl = "https://main--milo--adobecom.hlx.page/footer";
-    const url = nonMiloFooterUrl || getMetadata$3('footer-source') || `${locale.contentRoot}/footer`;
+    const url = getMetadata$3('footer-source') || `${locale.contentRoot}/footer`;
     this.body = await fetchAndProcessPlainHtml({
       url,
       shouldDecorateLinks: false,
@@ -1844,7 +1898,7 @@ class Footer {
   };
 
   loadIcons = async () => {
-    const file = await fetch(`https://main--milo--adobecom.hlx.page/libs/blocks/global-footer/icons.svg`);
+    const file = await fetch(`${base}/blocks/global-footer/icons.svg`);
 
     const content = await file.text();
     const elem = toFragment`<div class="feds-footer-icons">${content}</div>`;
@@ -1925,7 +1979,7 @@ class Footer {
           tags: 'errorType=warn,module=global-footer',
         });
       }
-      await loadBlock$1(regionPickerElem); // load modal logic and styles
+      await loadBlock$2(regionPickerElem); // load modal logic and styles
       if (regionPickerElem.classList[0] !== 'modal') {
         lanaLog({
           message: `Modal block class missing from region picker post loading the block; locale: ${locale}; regionPickerElem: ${regionPickerElem.outerHTML}`,
@@ -1950,7 +2004,7 @@ class Footer {
       regionPickerElem.href = '#'; // reset href value to not get treated as a fragment
       decorateAutoBlock(regionSelector); // add fragment-specific class(es)
       this.elements.regionPicker.append(regionSelector); // add fragment after regionPickerElem
-      await loadBlock$1(regionSelector); // load fragment and replace original link
+      await loadBlock$2(regionSelector); // load fragment and replace original link
       // Update aria-expanded on click
       regionPickerElem.addEventListener('click', (e) => {
         e.preventDefault();
@@ -2053,252 +2107,8 @@ class Footer {
   };
 }
 
-//=============================
-
-const locales = {
-
-  '': { ietf: 'en-US', tk: 'hah7vzn.css' },
-
-  ae_ar: { ietf: 'ar-AE', tk: 'lpk1hwn.css', dir: 'rtl' },
-
-  ae_en: { ietf: 'en', tk: 'hah7vzn.css' },
-
-  africa: { ietf: 'en', tk: 'hah7vzn.css' },
-
-  ar: { ietf: 'ar', tk: 'lpk1hwn.css', dir: 'rtl' },
-
-  ar_es: { ietf: 'es-AR', tk: 'hah7vzn.css' },
-
-  at: { ietf: 'de-AT', tk: 'hah7vzn.css' },
-
-  au: { ietf: 'en-AU', tk: 'hah7vzn.css' },
-
-  be_en: { ietf: 'en-BE', tk: 'hah7vzn.css' },
-
-  be_fr: { ietf: 'fr-BE', tk: 'hah7vzn.css' },
-
-  be_nl: { ietf: 'nl-BE', tk: 'qxw8hzm.css' },
-
-  bg: { ietf: 'bg-BG', tk: 'qxw8hzm.css' },
-
-  br: { ietf: 'pt-BR', tk: 'hah7vzn.css' },
-
-  ca_fr: { ietf: 'fr-CA', tk: 'hah7vzn.css' },
-
-  ca: { ietf: 'en-CA', tk: 'hah7vzn.css' },
-
-  ch_de: { ietf: 'de-CH', tk: 'hah7vzn.css' },
-
-  ch_fr: { ietf: 'fr-CH', tk: 'hah7vzn.css' },
-
-  ch_it: { ietf: 'it-CH', tk: 'hah7vzn.css' },
-
-  cl: { ietf: 'es-CL', tk: 'hah7vzn.css' },
-
-  cn: { ietf: 'zh-CN', tk: 'qxw8hzm' },
-
-  co: { ietf: 'es-CO', tk: 'hah7vzn.css' },
-
-  cr: { ietf: 'es-419', tk: 'hah7vzn.css' },
-
-  cy_en: { ietf: 'en-CY', tk: 'hah7vzn.css' },
-
-  cz: { ietf: 'cs-CZ', tk: 'qxw8hzm.css' },
-
-  de: { ietf: 'de-DE', tk: 'hah7vzn.css' },
-
-  dk: { ietf: 'da-DK', tk: 'qxw8hzm.css' },
-
-  ec: { ietf: 'es-419', tk: 'hah7vzn.css' },
-
-  ee: { ietf: 'et-EE', tk: 'qxw8hzm.css' },
-
-  eg_ar: { ietf: 'ar', tk: 'qxw8hzm.css', dir: 'rtl' },
-
-  eg_en: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  el: { ietf: 'el', tk: 'qxw8hzm.css' },
-
-  es: { ietf: 'es-ES', tk: 'hah7vzn.css' },
-
-  fi: { ietf: 'fi-FI', tk: 'qxw8hzm.css' },
-
-  fr: { ietf: 'fr-FR', tk: 'hah7vzn.css' },
-
-  gr_el: { ietf: 'el', tk: 'qxw8hzm.css' },
-
-  gr_en: { ietf: 'en-GR', tk: 'hah7vzn.css' },
-
-  gt: { ietf: 'es-419', tk: 'hah7vzn.css' },
-
-  hk_en: { ietf: 'en-HK', tk: 'hah7vzn.css' },
-
-  hk_zh: { ietf: 'zh-HK', tk: 'jay0ecd' },
-
-  hu: { ietf: 'hu-HU', tk: 'qxw8hzm.css' },
-
-  id_en: { ietf: 'en', tk: 'hah7vzn.css' },
-
-  id_id: { ietf: 'id', tk: 'qxw8hzm.css' },
-
-  ie: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  il_en: { ietf: 'en-IL', tk: 'hah7vzn.css' },
-
-  il_he: { ietf: 'he', tk: 'qxw8hzm.css', dir: 'rtl' },
-
-  in_hi: { ietf: 'hi', tk: 'qxw8hzm.css' },
-
-  in: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  it: { ietf: 'it-IT', tk: 'hah7vzn.css' },
-
-  jp: { ietf: 'ja-JP', tk: 'dvg6awq' },
-
-  kr: { ietf: 'ko-KR', tk: 'qjs5sfm' },
-
-  kw_ar: { ietf: 'ar', tk: 'qxw8hzm.css', dir: 'rtl' },
-
-  kw_en: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  la: { ietf: 'es-LA', tk: 'hah7vzn.css' },
-
-  langstore: { ietf: 'en-US', tk: 'hah7vzn.css' },
-
-  lt: { ietf: 'lt-LT', tk: 'qxw8hzm.css' },
-
-  lu_de: { ietf: 'de-LU', tk: 'hah7vzn.css' },
-
-  lu_en: { ietf: 'en-LU', tk: 'hah7vzn.css' },
-
-  lu_fr: { ietf: 'fr-LU', tk: 'hah7vzn.css' },
-
-  lv: { ietf: 'lv-LV', tk: 'qxw8hzm.css' },
-
-  mena_ar: { ietf: 'ar', tk: 'qxw8hzm.css', dir: 'rtl' },
-
-  mena_en: { ietf: 'en', tk: 'hah7vzn.css' },
-
-  mt: { ietf: 'en-MT', tk: 'hah7vzn.css' },
-
-  mx: { ietf: 'es-MX', tk: 'hah7vzn.css' },
-
-  my_en: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  my_ms: { ietf: 'ms', tk: 'qxw8hzm.css' },
-
-  ng: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  nl: { ietf: 'nl-NL', tk: 'qxw8hzm.css' },
-
-  no: { ietf: 'no-NO', tk: 'qxw8hzm.css' },
-
-  nz: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  pe: { ietf: 'es-PE', tk: 'hah7vzn.css' },
-
-  ph_en: { ietf: 'en', tk: 'hah7vzn.css' },
-
-  ph_fil: { ietf: 'fil-PH', tk: 'qxw8hzm.css' },
-
-  pl: { ietf: 'pl-PL', tk: 'qxw8hzm.css' },
-
-  pr: { ietf: 'es-419', tk: 'hah7vzn.css' },
-
-  pt: { ietf: 'pt-PT', tk: 'hah7vzn.css' },
-
-  qa_ar: { ietf: 'ar', tk: 'qxw8hzm.css', dir: 'rtl' },
-
-  qa_en: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  ro: { ietf: 'ro-RO', tk: 'qxw8hzm.css' },
-
-  ru: { ietf: 'ru-RU', tk: 'qxw8hzm.css' },
-
-  sa_ar: { ietf: 'ar', tk: 'qxw8hzm.css', dir: 'rtl' },
-
-  sa_en: { ietf: 'en', tk: 'hah7vzn.css' },
-
-  se: { ietf: 'sv-SE', tk: 'qxw8hzm.css' },
-
-  sg: { ietf: 'en-SG', tk: 'hah7vzn.css' },
-
-  si: { ietf: 'sl-SI', tk: 'qxw8hzm.css' },
-
-  sk: { ietf: 'sk-SK', tk: 'qxw8hzm.css' },
-
-  th_en: { ietf: 'en', tk: 'hah7vzn.css' },
-
-  th_th: { ietf: 'th', tk: 'qxw8hzm.css' },
-
-  tr: { ietf: 'tr-TR', tk: 'qxw8hzm.css' },
-
-  tw: { ietf: 'zh-TW', tk: 'jay0ecd' },
-
-  ua: { ietf: 'uk-UA', tk: 'qxw8hzm.css' },
-
-  uk: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  vn_en: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  vn_vi: { ietf: 'vi', tk: 'qxw8hzm.css' },
-
-  za: { ietf: 'en-GB', tk: 'hah7vzn.css' },
-
-  cis_en: { ietf: 'en', tk: 'rks2kng.css' },
-
-  cis_ru: { ietf: 'ru', tk: 'qxw8hzm.css' },
-
-  sea: { ietf: 'en', tk: 'hah7vzn.css' },
-
-};
-
-
-
- const config$1 = {
-
-  geoRouting: 'on',
-
-  fallbackRouting: 'on',
-
-  links: 'on',
-
-  imsClientId: 'milo',
-
-  codeRoot: '/libs',
-
-  locales,
-
-  prodDomains: 'milo.adobe.com',
-
-  jarvis: {
-
-    id: 'milo',
-
-    version: '1.0',
-
-    onDemand: false,
-
-  },
-
-  privacyId: '7a5eb705-95ed-4cc4-a11d-0cc5760e93db', // valid for *.adobe.com
-
-  breadcrumbs: 'on',
-
-  miloLibs: 'https://main--milo--adobecom.hlx.page/libs',
-
-  // taxonomyRoot: '/your-path-here',
-
-};
-
-//=============================
-
 function init$7(block) {
   try {
-    console.log(block);
-    debugger;
-    setConfig$1(config$1);
-    block.classList.add('global-footer');
     const footer = new Footer({ block });
     return footer;
   } catch (e) {
@@ -2307,18 +2117,527 @@ function init$7(block) {
   }
 }
 
-async function customFetch({ resource, withCacheRules }) {
-  const options = {};
-  if (withCacheRules) {
-    const params = new URLSearchParams(window.location.search);
-    options.cache = params.get('cache') === 'off' ? 'reload' : 'default';
-  }
-  return fetch(resource, options);
+/**
+ * Some blocks are not meant to be loaded out of the
+ * blocks folder. They are typically used in
+ * larger blocks only to help add context to content.
+ */
+const SYNTHETIC_BLOCKS = [
+  'adobe-logo',
+  'breadcrumbs',
+  'column-break',
+  'cross-cloud-menu',
+  'gnav-brand',
+  'gnav-promo',
+  'large-menu',
+  'library-metadata',
+  'link-group',
+  'profile',
+  'region-selector',
+  'search',
+  'social',
+];
+
+// eslint-disable-next-line import/prefer-default-export
+function showError(block, name) {
+  const isSynth = [...block.classList].some((className) => SYNTHETIC_BLOCKS.includes(className));
+  if (isSynth) return;
+  block.dataset.failed = 'true';
+  block.dataset.reason = `Failed loading ${name || ''} block.`;
 }
 
-const helpers = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+const fallback = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
-  customFetch
+  showError
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const PLAY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" fill="none" class="play-icon">
+                        <path d="M24 16.0005L0 32L1.39876e-06 0L24 16.0005Z" fill="white"/>
+                      </svg>`;
+
+function init$6(el, a, btnFormat) {
+  const { miloLibs, codeRoot } = getConfig$1();
+  const base = miloLibs || codeRoot;
+  loadStyle$2(`${base}/styles/consonant-play-button.css`);
+
+  const playBtnFormat = btnFormat.split(':')[1];
+  const btnSize = playBtnFormat.includes('-') ? `btn-${playBtnFormat.split('-')[1]}` : 'btn-large';
+  const pic = el.querySelector('picture');
+  const playIcon = createTag$1('div', { class: 'play-icon-container' }, PLAY_ICON_SVG);
+  const imgLinkContainer = createTag$1('span', { class: 'modal-img-link' });
+  el.insertBefore(imgLinkContainer, pic);
+  if (btnSize) a.classList.add(btnSize);
+  a.classList.add('consonant-play-btn');
+  a.setAttribute('aria-label', 'play');
+  a.append(playIcon);
+  imgLinkContainer.append(pic, a);
+}
+
+const imageVideoLink = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: init$6
+}, Symbol.toStringTag, { value: 'Module' }));
+
+let fetchedIcons;
+let fetched$1 = false;
+
+async function getSVGsfromFile(path) {
+  /* c8 ignore next */
+  if (!path) return null;
+  const { customFetch } = await Promise.resolve().then(() => helpers);
+  const resp = await customFetch({ resource: path, withCacheRules: true })
+    .catch(() => ({}));
+  /* c8 ignore next */
+  if (!resp.ok) return null;
+  const miloIcons = {};
+  const text = await resp.text();
+  const parser = new DOMParser();
+  const parsedText = parser.parseFromString(text, 'image/svg+xml');
+  const symbols = parsedText.querySelectorAll('symbol');
+  symbols.forEach((symbol) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    while (symbol.firstChild) svg.appendChild(symbol.firstChild);
+    [...symbol.attributes].forEach((attr) => svg.attributes.setNamedItem(attr.cloneNode()));
+    svg.classList.add('icon-milo', `icon-milo-${svg.id}`);
+    miloIcons[svg.id] = svg;
+  });
+  return miloIcons;
+}
+
+// eslint-disable-next-line no-async-promise-executor
+const fetchIcons = (config) => new Promise(async (resolve) => {
+  /* c8 ignore next */
+  if (!fetched$1) {
+    const { miloLibs, codeRoot } = config;
+    const base = miloLibs || codeRoot;
+    fetchedIcons = await getSVGsfromFile(`${base}/img/icons/icons.svg`);
+    fetched$1 = true;
+  }
+  resolve(fetchedIcons);
+});
+
+function decorateToolTip(icon) {
+  const wrapper = icon.closest('em');
+  wrapper.className = 'tooltip-wrapper';
+  if (!wrapper) return;
+  const conf = wrapper.textContent.split('|');
+  // Text is the last part of a tooltip
+  const content = conf.pop().trim();
+  if (!content) return;
+  icon.dataset.tooltip = content;
+  // Position is the next to last part of a tooltip
+  const place = conf.pop()?.trim().toLowerCase() || 'right';
+  icon.className = `icon icon-info milo-tooltip ${place}`;
+  wrapper.parentElement.replaceChild(icon, wrapper);
+}
+
+async function loadIcons(icons, config) {
+  const iconSVGs = await fetchIcons(config);
+  if (!iconSVGs) return;
+  icons.forEach(async (icon) => {
+    const { classList } = icon;
+    if (classList.contains('icon-tooltip')) decorateToolTip(icon);
+    const iconName = icon.classList[1].replace('icon-', '');
+    const existingIcon = icon.querySelector('svg');
+    if (!iconSVGs[iconName] || existingIcon) return;
+    const parent = icon.parentElement;
+    if (parent.childNodes.length > 1) {
+      if (parent.lastChild === icon) {
+        icon.classList.add('margin-inline-start');
+      } else if (parent.firstChild === icon) {
+        icon.classList.add('margin-inline-end');
+        if (parent.parentElement.tagName === 'LI') parent.parentElement.classList.add('icon-list-item');
+      } else {
+        icon.classList.add('margin-inline-start', 'margin-inline-end');
+      }
+    }
+    icon.insertAdjacentHTML('afterbegin', iconSVGs[iconName].outerHTML);
+  });
+}
+
+const icons = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: loadIcons,
+  fetchIcons
+}, Symbol.toStringTag, { value: 'Module' }));
+
+async function getPromoFromTaxonomy(contentRoot, doc) {
+  const NAME_KEY = 'Name';
+  const FOOTER_PROMO_LINK_KEY = 'Footer Promo Link';
+  const taxonomyUrl = `${contentRoot}/taxonomy.json`;
+  const tags = [...doc.head.querySelectorAll('meta[property="article:tag"]')].map((el) => el.content);
+
+  if (!tags.length) return undefined;
+
+  try {
+    const resp = await fetch(taxonomyUrl);
+    if (!resp.ok) return undefined;
+    const { data } = await resp.json();
+    const primaryTag = data.find((tag) => {
+      const name = tag[NAME_KEY].split('|').pop().trim();
+      return tags.includes(name) && tag[FOOTER_PROMO_LINK_KEY];
+    });
+    if (primaryTag) return primaryTag[FOOTER_PROMO_LINK_KEY];
+  } catch (error) {
+    /* c8 ignore next 2 */
+    window.lana.log(`Footer Promo - Taxonomy error: ${error}`, { tags: 'errorType=info,module=footer-promo' });
+  }
+  return undefined;
+}
+
+async function initFooterPromo(footerPromoTag, footerPromoType, doc = document) {
+  const config = getConfig$1();
+  const { locale: { contentRoot } } = config;
+  let href = footerPromoTag && `${contentRoot}/fragments/footer-promos/${footerPromoTag}`;
+
+  if (footerPromoType === 'taxonomy') {
+    const promo = await getPromoFromTaxonomy(contentRoot, doc);
+    if (promo) href = promo;
+  }
+
+  if (!href) return;
+
+  const { default: loadFragment } = await Promise.resolve().then(() => fragment);
+  const a = createTag$1('a', { href }, href);
+  const div = createTag$1('div', null, a);
+  const section = createTag$1('div', null, div);
+  doc.querySelector('main > div:last-of-type').insertAdjacentElement('afterend', section);
+  await loadFragment(a);
+  section.classList.add('section');
+  const sections = document.querySelectorAll('main > div');
+  decorateSectionAnalytics(section, sections.length - 1, config);
+}
+
+const footerPromo = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: initFooterPromo
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const ALLOY_SEND_EVENT = 'alloy_sendEvent';
+const ALLOY_SEND_EVENT_ERROR = 'alloy_sendEvent_error';
+const TARGET_TIMEOUT_MS = 4000;
+const ENTITLEMENT_TIMEOUT = 3000;
+
+const setDeep = (obj, path, value) => {
+  const pathArr = path.split('.');
+  let currentObj = obj;
+
+  for (const key of pathArr.slice(0, -1)) {
+    if (!currentObj[key] || typeof currentObj[key] !== 'object') {
+      currentObj[key] = {};
+    }
+    currentObj = currentObj[key];
+  }
+
+  currentObj[pathArr[pathArr.length - 1]] = value;
+};
+
+// eslint-disable-next-line max-len
+const waitForEventOrTimeout = (eventName, timeout, returnValIfTimeout) => new Promise((resolve) => {
+  const listener = (event) => {
+    // eslint-disable-next-line no-use-before-define
+    clearTimeout(timer);
+    resolve(event.detail);
+  };
+
+  const errorListener = () => {
+    // eslint-disable-next-line no-use-before-define
+    clearTimeout(timer);
+    resolve({ error: true });
+  };
+
+  const timer = setTimeout(() => {
+    window.removeEventListener(eventName, listener);
+    if (returnValIfTimeout !== undefined) {
+      resolve(returnValIfTimeout);
+    } else {
+      resolve({ timeout: true });
+    }
+  }, timeout);
+
+  window.addEventListener(eventName, listener, { once: true });
+  window.addEventListener(ALLOY_SEND_EVENT_ERROR, errorListener, { once: true });
+});
+
+const getExpFromParam = (expParam) => {
+  const lastSlash = expParam.lastIndexOf('/');
+  return {
+    experiments: [{
+      experimentPath: expParam.substring(0, lastSlash),
+      variantLabel: expParam.substring(lastSlash + 1),
+    }],
+  };
+};
+
+const handleAlloyResponse = (response) => {
+  const items = (
+    (response.propositions?.length && response.propositions)
+    || (response.decisions?.length && response.decisions)
+    || []
+  ).map((i) => i.items).flat();
+
+  if (!items?.length) return [];
+
+  return items
+    .map((item) => {
+      const content = item?.data?.content;
+      if (!content || !(content.manifestLocation || content.manifestContent)) return null;
+
+      return {
+        manifestPath: content.manifestLocation || content.manifestPath,
+        manifestUrl: content.manifestLocation,
+        manifestData: content.manifestContent?.experiences?.data || content.manifestContent?.data,
+        manifestPlaceholders: content.manifestContent?.placeholders?.data,
+        manifestInfo: content.manifestContent?.info.data,
+        name: item.meta['activity.name'],
+        variantLabel: item.meta['experience.name'] && `target-${item.meta['experience.name']}`,
+        meta: item.meta,
+      };
+    })
+    .filter(Boolean);
+};
+
+function roundToQuarter(num) {
+  return Math.ceil(num / 250) / 4;
+}
+
+function calculateResponseTime(responseStart) {
+  const responseTime = Date.now() - responseStart;
+  return roundToQuarter(responseTime);
+}
+
+function sendTargetResponseAnalytics(failure, responseStart, timeout, message) {
+  // temporary solution until we can decide on a better timeout value
+  const responseTime = calculateResponseTime(responseStart);
+  const timeoutTime = roundToQuarter(timeout);
+  let val = `target response time ${responseTime}:timed out ${failure}:timeout ${timeoutTime}`;
+  window.alloy('sendEvent', {
+    documentUnloading: true,
+    xdm: {
+      eventType: 'web.webinteraction.linkClicks',
+      web: {
+        webInteraction: {
+          linkClicks: { value: 1 },
+          type: 'other',
+          name: val,
+        },
+      },
+    },
+    data: { _adobe_corpnew: { digitalData: { primaryEvent: { eventInfo: { eventName: val } } } } },
+  });
+}
+
+const getTargetPersonalization = async () => {
+  const params = new URL(window.location.href).searchParams;
+
+  const experimentParam = params.get('experiment');
+  if (experimentParam) return getExpFromParam(experimentParam);
+
+  const timeout = parseInt(params.get('target-timeout'), 10)
+    || parseInt(getMetadata$3('target-timeout'), 10)
+    || TARGET_TIMEOUT_MS;
+
+  const responseStart = Date.now();
+  window.addEventListener(ALLOY_SEND_EVENT, () => {
+    const responseTime = calculateResponseTime(responseStart);
+    window.lana.log(`target response time: ${responseTime}`, { tags: 'errorType=info,module=martech' });
+  }, { once: true });
+
+  let manifests = [];
+  const response = await waitForEventOrTimeout(ALLOY_SEND_EVENT, timeout);
+  if (response.error) {
+    window.lana.log('target response time: ad blocker', { tags: 'errorType=info,module=martech' });
+    return [];
+  }
+  if (response.timeout) {
+    waitForEventOrTimeout(ALLOY_SEND_EVENT, 5100 - timeout)
+      .then(() => sendTargetResponseAnalytics(true, responseStart, timeout));
+  } else {
+    sendTargetResponseAnalytics(false, responseStart, timeout);
+    manifests = handleAlloyResponse(response.result);
+  }
+
+  return manifests;
+};
+
+const getDtmLib = (env) => ({
+  edgeConfigId: env.consumer?.edgeConfigId || env.edgeConfigId,
+  url:
+    env.name === 'prod'
+      ? env.consumer?.marTechUrl || 'https://assets.adobedtm.com/d4d114c60e50/a0e989131fd5/launch-5dd5dd2177e6.min.js'
+      : env.consumer?.marTechUrl || 'https://assets.adobedtm.com/d4d114c60e50/a0e989131fd5/launch-a27b33fc2dc0-development.min.js',
+});
+
+const setupEntitlementCallback = () => {
+  const setEntitlements = async (destinations) => {
+    const { default: parseEntitlements } = await Promise.resolve().then(() => entitlements);
+    return parseEntitlements(destinations);
+  };
+
+  const getEntitlements = (resolve) => {
+    const handleEntitlements = (detail) => {
+      if (detail?.result?.destinations?.length) {
+        resolve(setEntitlements(detail.result.destinations));
+      } else {
+        resolve([]);
+      }
+    };
+    waitForEventOrTimeout(ALLOY_SEND_EVENT, ENTITLEMENT_TIMEOUT, [])
+      .then(handleEntitlements)
+      .catch(() => resolve([]));
+  };
+
+  const { miloLibs, codeRoot, entitlements: resolveEnt } = getConfig$1();
+  getEntitlements(resolveEnt);
+
+  loadLink(
+    `${miloLibs || codeRoot}/features/personalization/entitlements.js`,
+    { as: 'script', rel: 'modulepreload' },
+  );
+};
+
+let filesLoadedPromise = false;
+const loadMartechFiles = async (config, url, edgeConfigId) => {
+  if (filesLoadedPromise) return filesLoadedPromise;
+
+  filesLoadedPromise = async () => {
+    loadIms()
+      .then(() => {
+        if (window.adobeIMS.isSignedInUser()) setupEntitlementCallback();
+      })
+      .catch(() => {});
+
+    setDeep(
+      window,
+      'alloy_all.data._adobe_corpnew.digitalData.page.pageInfo.language',
+      config.locale.ietf,
+    );
+    setDeep(window, 'digitalData.diagnostic.franklin.implementation', 'milo');
+
+    window.marketingtech = {
+      adobe: {
+        launch: { url, controlPageLoad: true },
+        alloy: { edgeConfigId },
+        target: false,
+      },
+      milo: true,
+    };
+    window.edgeConfigId = edgeConfigId;
+
+    const env = ['stage', 'local'].includes(config.env.name) ? '.qa' : '';
+    const martechPath = `martech.main.standard${env}.min.js`;
+    await loadScript$1(`${config.miloLibs || config.codeRoot}/deps/${martechPath}`);
+    // eslint-disable-next-line no-underscore-dangle
+    window._satellite.track('pageload');
+  };
+
+  await filesLoadedPromise();
+  return filesLoadedPromise;
+};
+
+async function init$5({
+  persEnabled = false,
+  persManifests = [],
+  postLCP = false,
+}) {
+  const config = getConfig$1();
+
+  const { url, edgeConfigId } = getDtmLib(config.env);
+  loadLink(url, { as: 'script', rel: 'preload' });
+
+  const martechPromise = loadMartechFiles(config, url, edgeConfigId);
+
+  if (persEnabled) {
+    loadLink(
+      `${config.miloLibs || config.codeRoot}/features/personalization/personalization.js`,
+      { as: 'script', rel: 'modulepreload' },
+    );
+
+    const targetManifests = await getTargetPersonalization();
+    if (targetManifests?.length || persManifests?.length) {
+      const { preloadManifests, applyPers } = await Promise.resolve().then(() => personalization);
+      const manifests = preloadManifests({ targetManifests, persManifests });
+      await applyPers(manifests, postLCP);
+    }
+  }
+
+  return martechPromise;
+}
+
+const martech = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: init$5
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const GMTStringToLocalDate = (gmtString) => new Date(`${gmtString}+00:00`);
+
+const APAC = ['au', 'cn', 'hk_en', 'hk_zh', 'id_en', 'id_id', 'in', 'in_hi', 'kr', 'my_en', 'my_ms', 'nz', 'ph_en', 'ph_fil', 'sg', 'th_en', 'th_th', 'tw', 'vn_en', 'vn_vi'];
+const EMEA = ['ae_en', 'ae_ar', 'africa', 'at', 'be_en', 'be_fr', 'be_nl', 'bg', 'ch_de', 'ch_fr', 'ch_it', 'cis_en', 'cis_ru', 'cz', 'de', 'dk', 'ee', 'eg_ar', 'eg_en', 'es', 'fi', 'fr', 'gr_el', 'gr_en', 'hu', 'ie', 'il_en', 'il_he', 'iq', 'is', 'it', 'kw_ar', 'kw_en', 'lt', 'lu_de', 'lu_en', 'lu_fr', 'lv', 'mena_ar', 'mena_en', 'ng', 'nl', 'no', 'pl', 'pt', 'qa_ar', 'qa_en', 'ro', 'ru', 'sa_en', 'sa_ar', 'se', 'si', 'sk', 'tr', 'ua', 'uk', 'za'];
+const AMERICAS = ['us', 'ar', 'br', 'ca', 'ca_fr', 'cl', 'co', 'cr', 'ec', 'gt', 'la', 'mx', 'pe', 'pr'];
+const JP = ['jp'];
+const REGIONS = { APAC, EMEA, AMERICAS, JP };
+const localeCode = getConfig$1()?.locale?.prefix?.substring(1) || 'us';
+const regionCode = Object.keys(REGIONS)
+  .find((r) => REGIONS[r]?.includes(localeCode))?.toLowerCase() || null;
+
+const isDisabled = (event, searchParams) => {
+  if (!event) return false;
+  if (event.locales && !event.locales.includes(localeCode)) return true;
+  const currentDate = searchParams?.get('instant') ? new Date(searchParams.get('instant')) : new Date();
+  if ((!event.start && event.end) || (!event.end && event.start)) return true;
+  return Boolean(event.start && event.end
+    && (currentDate < event.start || currentDate > event.end));
+};
+
+const isManifestWithinLocale = (locales) => {
+  if (!locales) return true;
+  return locales.split(';').map((locale) => locale.trim()).includes(localeCode);
+};
+
+const getRegionalPromoManifests = (manifestNames, region, searchParams) => {
+  const attachedManifests = manifestNames
+    ? manifestNames.split(',')?.map((manifest) => manifest?.trim())
+    : [];
+
+  const schedule = getMetadata$3(region ? `${region}_schedule` : 'schedule');
+  if (!schedule) {
+    return [];
+  }
+  return schedule.split(',')
+    .map((manifest) => {
+      const [name, start, end, manifestPath, locales] = manifest.trim().split('|').map((s) => s.trim());
+      if (attachedManifests.includes(name) && isManifestWithinLocale(locales)) {
+        const event = {
+          name,
+          start: GMTStringToLocalDate(start),
+          end: GMTStringToLocalDate(end),
+        };
+        const disabled = isDisabled(event, searchParams);
+        return { manifestPath, disabled, event };
+      }
+      return null;
+    })
+    .filter((manifest) => manifest != null);
+};
+
+function getPromoManifests(manifestNames, searchParams) {
+  const promoManifests = regionCode != null ? getRegionalPromoManifests(
+    manifestNames[`${regionCode}_manifestnames`],
+    regionCode,
+    searchParams,
+  ) : [];
+  const globalPromoManifests = getRegionalPromoManifests(
+    manifestNames.manifestnames,
+    null,
+    searchParams,
+  );
+  return [...promoManifests, ...globalPromoManifests];
+}
+
+const promoUtils = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: getPromoManifests,
+  isDisabled
 }, Symbol.toStringTag, { value: 'Module' }));
 
 const ENTITLEMENT_MAP = {
@@ -2338,8 +2657,8 @@ const ENTITLEMENT_MAP = {
   '015c52cb-30b0-4ac9-b02e-f8716b39bfb6': 'not-q-always-on-promo',
   '42e06851-64cd-4684-a54a-13777403487a': '3d-substance-collection',
   'eda8c774-420b-44c2-9006-f9a8d0fb5168': '3d-substance-texturing',
-  '76e408f6-ab08-49f0-adb6-f9b4efcc205d': 'free-cc',
-  '08216aa4-4a0f-4136-8b27-182212764a7c': 'free-dc',
+  '76e408f6-ab08-49f0-adb6-f9b4efcc205d': 'cc-free',
+  '08216aa4-4a0f-4136-8b27-182212764a7c': 'dc-free',
   // PEP segments
   '6cb0d58c-3a65-47e2-b459-c52bb158d5b6': 'lightroom-web-usage',
   'caa3de84-6336-4fa8-8db2-240fc88106cc': 'photoshop-signup-source',
@@ -2369,13 +2688,13 @@ const getEntitlements = async (data) => {
   });
 };
 
-function init$6(data) {
+function init$4(data) {
   return getEntitlements(data);
 }
 
 const entitlements = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
-  default: init$6,
+  default: init$4,
   getEntitlementMap
 }, Symbol.toStringTag, { value: 'Module' }));
 
@@ -2406,7 +2725,7 @@ const PERSONALIZATION_KEYS = Object.keys(PERSONALIZATION_TAGS);
 
 const CLASS_EL_DELETE = 'p13n-deleted';
 const CLASS_EL_REPLACE = 'p13n-replaced';
-const COLUMN_NOT_OPERATOR = 'not';
+const COLUMN_NOT_OPERATOR = 'not ';
 const TARGET_EXP_PREFIX = 'target-';
 const INLINE_HASH = '_inline';
 const PAGE_URL = new URL(window.location.href);
@@ -2871,10 +3190,10 @@ const getVariantInfo = (line, variantNames, variants, manifestId) => {
   });
 };
 
-function parseConfig(data, manifestId) {
+function parseManifestVariants(data, manifestId) {
   if (!data?.length) return null;
 
-  const config = {};
+  const manifestConfig = {};
   const experiences = data.map((d) => normalizeKeys(d));
 
   try {
@@ -2888,12 +3207,12 @@ function parseConfig(data, manifestId) {
 
     experiences.forEach((line) => getVariantInfo(line, variantNames, variants, manifestId));
 
-    config.variants = variants;
-    config.variantNames = variantNames;
-    return config;
+    manifestConfig.variants = variants;
+    manifestConfig.variantNames = variantNames;
+    return manifestConfig;
   } catch (e) {
     /* c8 ignore next 3 */
-    console.log('error parsing personalization config:', e, experiences);
+    console.log('error parsing personalization manifestConfig:', e, experiences);
   }
   return null;
 }
@@ -2934,6 +3253,11 @@ const checkForParamMatch = (paramStr) => {
 };
 
 async function getPersonalizationVariant(manifestPath, variantNames = [], variantLabel = null) {
+  const config = getConfig$1();
+  if (config.mep?.variantOverride?.[manifestPath]) {
+    return config.mep.variantOverride[manifestPath];
+  }
+
   const variantInfo = variantNames.reduce((acc, name) => {
     let nameArr = [name];
     if (!name.startsWith(TARGET_EXP_PREFIX)) nameArr = name.split(',');
@@ -2948,7 +3272,6 @@ async function getPersonalizationVariant(manifestPath, variantNames = [], varian
 
   let userEntitlements = [];
   if (hasEntitlementTag) {
-    const config = getConfig$1();
     userEntitlements = await config.entitlements();
   }
 
@@ -2984,7 +3307,7 @@ const createDefaultExperiment = (manifest) => ({
   variants: {},
 });
 
-async function getPersConfig(info, override = false) {
+async function getManifestConfig(info, variantOverride = false) {
   const {
     name,
     manifestData,
@@ -2996,7 +3319,7 @@ async function getPersConfig(info, override = false) {
     disabled,
     event,
   } = info;
-  if (disabled && !override) {
+  if (disabled && !variantOverride) {
     return createDefaultExperiment(info);
   }
   let data = manifestData;
@@ -3009,17 +3332,17 @@ async function getPersConfig(info, override = false) {
   if (!persData) return null;
 
   let manifestId = getFileName(manifestPath);
-  const globalConfig = getConfig$1();
-  if (!globalConfig.mep?.preview) {
+  const config = getConfig$1();
+  if (!config.mep?.preview) {
     manifestId = false;
   } else if (name) {
     manifestId = `${name}: ${manifestId}`;
   }
-  const config = parseConfig(persData, manifestId);
+  const manifestConfig = parseManifestVariants(persData, manifestId);
 
-  if (!config) {
+  if (!manifestConfig) {
     /* c8 ignore next 3 */
-    console.log('Error loading personalization config: ', name || manifestPath);
+    console.log('Error loading personalization manifestConfig: ', name || manifestPath);
     return null;
   }
 
@@ -3033,8 +3356,8 @@ async function getPersConfig(info, override = false) {
       acc[item.key] = item.value;
       return acc;
     }, {});
-    config.manifestOverrideName = infoObj?.['manifest-override-name']?.toLowerCase();
-    config.manifestType = infoObj?.['manifest-type']?.toLowerCase();
+    manifestConfig.manifestOverrideName = infoObj?.['manifest-override-name']?.toLowerCase();
+    manifestConfig.manifestType = infoObj?.['manifest-type']?.toLowerCase();
     const executionOrder = {
       'manifest-type': 1,
       'manifest-execution-order': 1,
@@ -3044,43 +3367,43 @@ async function getPersConfig(info, override = false) {
       const index = infoKeyMap[key].indexOf(infoObj[key]);
       executionOrder[key] = index > -1 ? index : 1;
     });
-    config.executionOrder = `${executionOrder['manifest-execution-order']}-${executionOrder['manifest-type']}`;
+    manifestConfig.executionOrder = `${executionOrder['manifest-execution-order']}-${executionOrder['manifest-type']}`;
   } else {
     // eslint-disable-next-line prefer-destructuring
-    config.manifestType = infoKeyMap['manifest-type'][1];
-    config.executionOrder = '1-1';
+    manifestConfig.manifestType = infoKeyMap['manifest-type'][1];
+    manifestConfig.executionOrder = '1-1';
   }
 
-  config.manifestPath = normalizePath(manifestPath);
+  manifestConfig.manifestPath = normalizePath(manifestPath);
   const selectedVariantName = await getPersonalizationVariant(
-    config.manifestPath,
-    config.variantNames,
+    manifestConfig.manifestPath,
+    manifestConfig.variantNames,
     variantLabel,
   );
 
-  if (selectedVariantName && config.variantNames.includes(selectedVariantName)) {
-    config.run = true;
-    config.selectedVariantName = selectedVariantName;
-    config.selectedVariant = config.variants[selectedVariantName];
+  if (selectedVariantName && manifestConfig.variantNames.includes(selectedVariantName)) {
+    manifestConfig.run = true;
+    manifestConfig.selectedVariantName = selectedVariantName;
+    manifestConfig.selectedVariant = manifestConfig.variants[selectedVariantName];
   } else {
     /* c8 ignore next 2 */
-    config.selectedVariantName = 'default';
-    config.selectedVariant = 'default';
+    manifestConfig.selectedVariantName = 'default';
+    manifestConfig.selectedVariant = 'default';
   }
 
   const placeholders = manifestPlaceholders || data?.placeholders?.data;
   if (placeholders) {
     updateConfig(
-      parsePlaceholders(placeholders, getConfig$1(), config.selectedVariantName),
+      parsePlaceholders(placeholders, getConfig$1(), manifestConfig.selectedVariantName),
     );
   }
 
-  config.name = name;
-  config.manifest = manifestPath;
-  config.manifestUrl = manifestUrl;
-  config.disabled = disabled;
-  config.event = event;
-  return config;
+  manifestConfig.name = name;
+  manifestConfig.manifest = manifestPath;
+  manifestConfig.manifestUrl = manifestUrl;
+  manifestConfig.disabled = disabled;
+  manifestConfig.event = event;
+  return manifestConfig;
 }
 
 const deleteMarkedEls = (rootEl = document) => {
@@ -3119,26 +3442,19 @@ async function categorizeActions(experiment) {
   };
 }
 
-function overridePersonalizationVariant(manifest, config) {
-  const { manifestPath, variantNames } = manifest;
-  if (!config.mep?.override) return;
-  let selectedVariant;
-  config.mep?.override?.split('---').some((item) => {
+function parseMepParam(mepParam) {
+  if (!mepParam) return false;
+  const mepObject = Object.create(null);
+  const decodedParam = decodeURIComponent(mepParam);
+  decodedParam.split('---').forEach((item) => {
     const pair = item.trim().split('--');
-    if (pair[0] === manifestPath && pair.length > 1) {
-      [, selectedVariant] = pair;
-      return true;
+    if (pair.length > 1) {
+      const [manifestPath, selectedVariant] = pair;
+      mepObject[manifestPath] = selectedVariant;
     }
-    return false;
   });
-  if (!selectedVariant) return;
-  if (variantNames.includes(selectedVariant)) {
-    manifest.selectedVariantName = selectedVariant;
-    manifest.selectedVariant = manifest.variants[selectedVariant];
-    return;
-  }
-  manifest.selectedVariantName = selectedVariant;
-  manifest.selectedVariant = manifest.variants[selectedVariant];
+
+  return mepObject;
 }
 
 function compareExecutionOrder(a, b) {
@@ -3169,7 +3485,6 @@ function cleanAndSortManifestList(manifests) {
       } else {
         manifestObj[manifest.manifestPath] = manifest;
       }
-      if (config.mep?.override) overridePersonalizationVariant(manifest, config);
     } catch (e) {
       console.warn(e);
       window.lana?.log(`MEP Error parsing manifests: ${e.toString()}`);
@@ -3206,8 +3521,9 @@ async function applyPers(manifests, postLCP = false) {
       } = Object.fromEntries(PAGE_URL.searchParams);
       config.mep = {
         handleFragmentCommand,
-        preview: (mepButton !== 'off' && (config.env?.name !== 'prod' || mepButton)),
-        override: mepParam ? decodeURIComponent(mepParam) : '',
+        preview: (mepButton !== 'off'
+          && (config.env?.name !== 'prod' || mepParam || mepParam === '' || mepButton)),
+        variantOverride: parseMepParam(mepParam),
         highlight: (mepHighlight !== undefined && mepHighlight !== 'false'),
         mepParam,
         targetEnabled: config.mep?.targetEnabled,
@@ -3217,7 +3533,7 @@ async function applyPers(manifests, postLCP = false) {
     if (!manifests?.length) return;
     let experiments = manifests;
     for (let i = 0; i < experiments.length; i += 1) {
-      experiments[i] = await getPersConfig(experiments[i], config.mep?.override);
+      experiments[i] = await getManifestConfig(experiments[i], config.mep?.variantOverride);
     }
 
     experiments = cleanAndSortManifestList(experiments);
@@ -3269,724 +3585,19 @@ const personalization = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.definePro
   cleanAndSortManifestList,
   deleteMarkedEls,
   getFileName,
-  getPersConfig,
+  getManifestConfig,
   handleCommands,
   handleFragmentCommand,
   matchGlob,
   normalizePath,
-  parseConfig,
+  parseManifestVariants,
   preloadManifests,
   replaceInner
 }, Symbol.toStringTag, { value: 'Module' }));
 
-/* eslint-disable max-classes-per-file */
-
-const fragMap = {};
-
-const removeHash = (url) => {
-  const urlNoHash = url.split('#')[0];
-  return url.includes('#_dnt') ? `${urlNoHash}#_dnt` : urlNoHash;
-};
-
-const isCircularRef = (href) => [...Object.values(fragMap)]
-  .some((tree) => {
-    const node = tree.find(href);
-    return node ? !(node.isLeaf) : false;
-  });
-
-const updateFragMap = (fragment, a, href) => {
-  const fragLinks = [...fragment.querySelectorAll('a')]
-    .filter((link) => localizeLink(link.href).includes('/fragments/'));
-  if (!fragLinks.length) return;
-
-  if (document.body.contains(a)) { // is fragment on page (not nested)
-    // eslint-disable-next-line no-use-before-define
-    fragMap[href] = new Tree(href);
-    fragLinks.forEach((link) => fragMap[href].insert(href, localizeLink(removeHash(link.href))));
-  } else {
-    Object.values(fragMap).forEach((tree) => {
-      if (tree.find(href)) {
-        fragLinks.forEach((link) => tree.insert(href, localizeLink(removeHash(link.href))));
-      }
-    });
-  }
-};
-
-const setManifestIdOnChildren = (sections, manifestId) => {
-  [...sections[0].children].forEach(
-    (child) => (child.dataset.manifestId = manifestId),
-  );
-};
-
-const insertInlineFrag = (sections, a, relHref) => {
-  // Inline fragments only support one section, other sections are ignored
-  const fragChildren = [...sections[0].children];
-  fragChildren.forEach((child) => child.setAttribute('data-path', relHref));
-  if (a.parentElement.nodeName === 'DIV' && !a.parentElement.attributes.length) {
-    a.parentElement.replaceWith(...fragChildren);
-  } else {
-    a.replaceWith(...fragChildren);
-  }
-};
-
-function replaceDotMedia(path, doc) {
-  const resetAttributeBase = (tag, attr) => {
-    doc.querySelectorAll(`${tag}[${attr}^="./media_"]`).forEach((el) => {
-      el[attr] = new URL(el.getAttribute(attr), new URL(path, window.location)).href;
-    });
-  };
-  resetAttributeBase('img', 'src');
-  resetAttributeBase('source', 'srcset');
-}
-
-async function init$5(a) {
-  const { decorateArea, mep } = getConfig$1();
-  let relHref = localizeLink(a.href);
-  let inline = false;
-
-  if (a.parentElement?.nodeName === 'P') {
-    const children = a.parentElement.childNodes;
-    const div = createTag$1('div');
-    for (const attr of a.parentElement.attributes) div.setAttribute(attr.name, attr.value);
-    a.parentElement.replaceWith(div);
-    div.append(...children);
-  }
-
-  if (a.href.includes('#_inline')) {
-    inline = true;
-    a.href = a.href.replace('#_inline', '');
-    relHref = relHref.replace('#_inline', '');
-  }
-
-  const path = new URL(a.href).pathname;
-  if (mep?.fragments?.[path] && mep) {
-    relHref = mep.handleFragmentCommand(mep?.fragments[path], a);
-    if (!relHref) return;
-  }
-
-  if (isCircularRef(relHref)) {
-    window.lana?.log(`ERROR: Fragment Circular Reference loading ${a.href}`);
-    return;
-  }
-
-  const { customFetch } = await Promise.resolve().then(() => helpers);
-  const resp = await customFetch({ resource: `${a.href}.plain.html`, withCacheRules: true })
-    .catch(() => ({}));
-
-  if (!resp?.ok) {
-    window.lana?.log(`Could not get fragment: ${a.href}.plain.html`);
-    return;
-  }
-
-  const html = await resp.text();
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  replaceDotMedia(a.href, doc);
-  if (decorateArea) decorateArea(doc, { fragmentLink: a });
-
-  const sections = doc.querySelectorAll('body > div');
-
-  if (!sections.length) {
-    window.lana?.log(`Could not make fragment: ${a.href}.plain.html`);
-    return;
-  }
-
-  const fragment = createTag$1('div', { class: 'fragment', 'data-path': relHref });
-
-  if (!inline) {
-    fragment.append(...sections);
-  }
-
-  updateFragMap(fragment, a, relHref);
-
-  if (a.dataset.manifestId) {
-    if (inline) {
-      setManifestIdOnChildren(sections, a.dataset.manifestId);
-    } else {
-      fragment.dataset.manifestId = a.dataset.manifestId;
-    }
-  }
-
-  if (inline) {
-    insertInlineFrag(sections, a, relHref);
-  } else {
-    a.parentElement.replaceChild(fragment, a);
-    await loadArea(fragment);
-  }
-}
-
-let Node$1 = class Node {
-  constructor(key, value = key, parent = null) {
-    this.key = key;
-    this.value = value;
-    this.parent = parent;
-    this.children = [];
-  }
-
-  get isLeaf() {
-    return this.children.length === 0;
-  }
-};
-
-class Tree {
-  constructor(key, value = key) {
-    this.root = new Node$1(key, value);
-  }
-
-  * traverse(node = this.root) {
-    yield node;
-    if (node.children.length) {
-      for (const child of node.children) {
-        yield* this.traverse(child);
-      }
-    }
-  }
-
-  insert(parentNodeKey, key, value = key) {
-    for (const node of this.traverse()) {
-      if (node.key === parentNodeKey) {
-        node.children.push(new Node$1(key, value, node));
-        return true;
-      }
-    }
-    return false;
-  }
-
-  remove(key) {
-    for (const node of this.traverse()) {
-      const filtered = node.children.filter((c) => c.key !== key);
-      if (filtered.length !== node.children.length) {
-        node.children = filtered;
-        return true;
-      }
-    }
-    return false;
-  }
-
-  find(key) {
-    for (const node of this.traverse()) {
-      if (node.key === key) return node;
-    }
-    return undefined;
-  }
-}
-
-const fragment = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  Tree,
-  default: init$5
-}, Symbol.toStringTag, { value: 'Module' }));
-
-const getMetadata$2 = (el, config) => [...el.childNodes].reduce((rdx, row) => {
-  if (row.children?.length > 1) {
-    const key = processTrackingLabels(row.children[0].textContent, config);
-    const value = processTrackingLabels(row.children[1].textContent, config);
-    if (key && value) rdx[key] = value;
-  }
-  return rdx;
-}, {});
-
-function init$4(el) {
-  const config = getConfig$1();
-  const { locale, ietf = locale?.ietf, analyticLocalization } = config;
-  if (ietf !== 'en-US') {
-    config.analyticLocalization = {
-      ...analyticLocalization,
-      ...getMetadata$2(el, config),
-    };
-  }
-  el.remove();
-  return config;
-}
-
-const martechMetadata = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  default: init$4,
-  getMetadata: getMetadata$2
-}, Symbol.toStringTag, { value: 'Module' }));
-
-/**
- * Some blocks are not meant to be loaded out of the
- * blocks folder. They are typically used in
- * larger blocks only to help add context to content.
- */
-const SYNTHETIC_BLOCKS = [
-  'adobe-logo',
-  'breadcrumbs',
-  'column-break',
-  'cross-cloud-menu',
-  'gnav-brand',
-  'gnav-promo',
-  'large-menu',
-  'library-metadata',
-  'link-group',
-  'profile',
-  'region-selector',
-  'search',
-  'social',
-];
-
-// eslint-disable-next-line import/prefer-default-export
-function showError(block, name) {
-  const isSynth = [...block.classList].some((className) => SYNTHETIC_BLOCKS.includes(className));
-  if (isSynth) return;
-  block.dataset.failed = 'true';
-  block.dataset.reason = `Failed loading ${name || ''} block.`;
-}
-
-const fallback = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  showError
-}, Symbol.toStringTag, { value: 'Module' }));
-
-const PLAY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32" fill="none" class="play-icon">
-                        <path d="M24 16.0005L0 32L1.39876e-06 0L24 16.0005Z" fill="white"/>
-                      </svg>`;
-
-function init$3(el, a, btnFormat) {
-  const { miloLibs, codeRoot } = getConfig$1();
-  const base = miloLibs || codeRoot;
-  loadStyle$2(`${base}/styles/consonant-play-button.css`);
-
-  const playBtnFormat = btnFormat.split(':')[1];
-  const btnSize = playBtnFormat.includes('-') ? `btn-${playBtnFormat.split('-')[1]}` : 'btn-large';
-  const pic = el.querySelector('picture');
-  const playIcon = createTag$1('div', { class: 'play-icon-container', 'aria-label': 'play', role: 'button' }, PLAY_ICON_SVG);
-  const imgLinkContainer = createTag$1('span', { class: 'modal-img-link' });
-  el.insertBefore(imgLinkContainer, pic);
-  if (btnSize) a.classList.add(btnSize);
-  a.classList.add('consonant-play-btn');
-  a.append(playIcon);
-  imgLinkContainer.append(pic, a);
-}
-
-const imageVideoLink = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  default: init$3
-}, Symbol.toStringTag, { value: 'Module' }));
-
-let fetchedIcons;
-let fetched$1 = false;
-
-async function getSVGsfromFile(path) {
-  /* c8 ignore next */
-  if (!path) return null;
-  const { customFetch } = await Promise.resolve().then(() => helpers);
-  const resp = await customFetch({ resource: path, withCacheRules: true })
-    .catch(() => ({}));
-  /* c8 ignore next */
-  if (!resp.ok) return null;
-  const miloIcons = {};
-  const text = await resp.text();
-  const parser = new DOMParser();
-  const parsedText = parser.parseFromString(text, 'image/svg+xml');
-  const symbols = parsedText.querySelectorAll('symbol');
-  symbols.forEach((symbol) => {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    while (symbol.firstChild) svg.appendChild(symbol.firstChild);
-    [...symbol.attributes].forEach((attr) => svg.attributes.setNamedItem(attr.cloneNode()));
-    svg.classList.add('icon-milo', `icon-milo-${svg.id}`);
-    miloIcons[svg.id] = svg;
-  });
-  return miloIcons;
-}
-
-// eslint-disable-next-line no-async-promise-executor
-const fetchIcons = (config) => new Promise(async (resolve) => {
-  /* c8 ignore next */
-  if (!fetched$1) {
-    const { miloLibs, codeRoot } = config;
-    const base = miloLibs || codeRoot;
-    fetchedIcons = await getSVGsfromFile(`${base}/img/icons/icons.svg`);
-    fetched$1 = true;
-  }
-  resolve(fetchedIcons);
-});
-
-function decorateToolTip(icon) {
-  const wrapper = icon.closest('em');
-  wrapper.className = 'tooltip-wrapper';
-  if (!wrapper) return;
-  const conf = wrapper.textContent.split('|');
-  // Text is the last part of a tooltip
-  const content = conf.pop().trim();
-  if (!content) return;
-  icon.dataset.tooltip = content;
-  // Position is the next to last part of a tooltip
-  const place = conf.pop()?.trim().toLowerCase() || 'right';
-  icon.className = `icon icon-info milo-tooltip ${place}`;
-  wrapper.parentElement.replaceChild(icon, wrapper);
-}
-
-async function loadIcons(icons, config) {
-  const iconSVGs = await fetchIcons(config);
-  if (!iconSVGs) return;
-  icons.forEach(async (icon) => {
-    const { classList } = icon;
-    if (classList.contains('icon-tooltip')) decorateToolTip(icon);
-    const iconName = icon.classList[1].replace('icon-', '');
-    const existingIcon = icon.querySelector('svg');
-    if (!iconSVGs[iconName] || existingIcon) return;
-    const parent = icon.parentElement;
-    if (parent.childNodes.length > 1) {
-      if (parent.lastChild === icon) {
-        icon.classList.add('margin-left');
-      } else if (parent.firstChild === icon) {
-        icon.classList.add('margin-right');
-        if (parent.parentElement.tagName === 'LI') parent.parentElement.classList.add('icon-list-item');
-      } else {
-        icon.classList.add('margin-left', 'margin-right');
-      }
-    }
-    icon.insertAdjacentHTML('afterbegin', iconSVGs[iconName].outerHTML);
-  });
-}
-
-const icons = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  default: loadIcons,
-  fetchIcons
-}, Symbol.toStringTag, { value: 'Module' }));
-
-async function getPromoFromTaxonomy(contentRoot, doc) {
-  const NAME_KEY = 'Name';
-  const FOOTER_PROMO_LINK_KEY = 'Footer Promo Link';
-  const taxonomyUrl = `${contentRoot}/taxonomy.json`;
-  const tags = [...doc.head.querySelectorAll('meta[property="article:tag"]')].map((el) => el.content);
-
-  if (!tags.length) return undefined;
-
-  try {
-    const resp = await fetch(taxonomyUrl);
-    if (!resp.ok) return undefined;
-    const { data } = await resp.json();
-    const primaryTag = data.find((tag) => {
-      const name = tag[NAME_KEY].split('|').pop().trim();
-      return tags.includes(name) && tag[FOOTER_PROMO_LINK_KEY];
-    });
-    if (primaryTag) return primaryTag[FOOTER_PROMO_LINK_KEY];
-  } catch (error) {
-    /* c8 ignore next 2 */
-    window.lana.log(`Footer Promo - Taxonomy error: ${error}`, { tags: 'errorType=info,module=footer-promo' });
-  }
-  return undefined;
-}
-
-async function initFooterPromo(footerPromoTag, footerPromoType, doc = document) {
-  const config = getConfig$1();
-  const { locale: { contentRoot } } = config;
-  let href = footerPromoTag && `${contentRoot}/fragments/footer-promos/${footerPromoTag}`;
-
-  if (footerPromoType === 'taxonomy') {
-    const promo = await getPromoFromTaxonomy(contentRoot, doc);
-    if (promo) href = promo;
-  }
-
-  if (!href) return;
-
-  const { default: loadFragment } = await Promise.resolve().then(() => fragment);
-  const a = createTag$1('a', { href }, href);
-  const div = createTag$1('div', null, a);
-  const section = createTag$1('div', null, div);
-  doc.querySelector('main > div:last-of-type').insertAdjacentElement('afterend', section);
-  await loadFragment(a);
-  section.classList.add('section');
-  const sections = document.querySelectorAll('main > div');
-  decorateSectionAnalytics(section, sections.length - 1, config);
-}
-
-const footerPromo = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  default: initFooterPromo
-}, Symbol.toStringTag, { value: 'Module' }));
-
-const ALLOY_SEND_EVENT = 'alloy_sendEvent';
-const TARGET_TIMEOUT_MS = 4000;
-const ENTITLEMENT_TIMEOUT = 3000;
-
-const setDeep = (obj, path, value) => {
-  const pathArr = path.split('.');
-  let currentObj = obj;
-
-  for (const key of pathArr.slice(0, -1)) {
-    if (!currentObj[key] || typeof currentObj[key] !== 'object') {
-      currentObj[key] = {};
-    }
-    currentObj = currentObj[key];
-  }
-
-  currentObj[pathArr[pathArr.length - 1]] = value;
-};
-
-// eslint-disable-next-line max-len
-const waitForEventOrTimeout = (eventName, timeout, returnValIfTimeout) => new Promise((resolve) => {
-  const listener = (event) => {
-    // eslint-disable-next-line no-use-before-define
-    clearTimeout(timer);
-    resolve(event.detail);
-  };
-
-  const timer = setTimeout(() => {
-    window.removeEventListener(eventName, listener);
-    if (returnValIfTimeout !== undefined) {
-      resolve(returnValIfTimeout);
-    } else {
-      resolve({ timeout: true });
-    }
-  }, timeout);
-
-  window.addEventListener(eventName, listener, { once: true });
-});
-
-const getExpFromParam = (expParam) => {
-  const lastSlash = expParam.lastIndexOf('/');
-  return {
-    experiments: [{
-      experimentPath: expParam.substring(0, lastSlash),
-      variantLabel: expParam.substring(lastSlash + 1),
-    }],
-  };
-};
-
-const handleAlloyResponse = (response) => {
-  const items = (
-    (response.propositions?.length && response.propositions)
-    || (response.decisions?.length && response.decisions)
-    || []
-  ).map((i) => i.items).flat();
-
-  if (!items?.length) return [];
-
-  return items
-    .map((item) => {
-      const content = item?.data?.content;
-      if (!content || !(content.manifestLocation || content.manifestContent)) return null;
-
-      return {
-        manifestPath: content.manifestLocation || content.manifestPath,
-        manifestUrl: content.manifestLocation,
-        manifestData: content.manifestContent?.experiences?.data || content.manifestContent?.data,
-        manifestPlaceholders: content.manifestContent?.placeholders?.data,
-        manifestInfo: content.manifestContent?.info.data,
-        name: item.meta['activity.name'],
-        variantLabel: item.meta['experience.name'] && `target-${item.meta['experience.name']}`,
-        meta: item.meta,
-      };
-    })
-    .filter(Boolean);
-};
-
-function roundToQuarter(num) {
-  return Math.ceil(num / 250) / 4;
-}
-
-function calculateResponseTime(responseStart) {
-  const responseTime = Date.now() - responseStart;
-  return roundToQuarter(responseTime);
-}
-
-function sendTargetResponseAnalytics(failure, responseStart, timeout, message) {
-  // temporary solution until we can decide on a better timeout value
-  const responseTime = calculateResponseTime(responseStart);
-  const timeoutTime = roundToQuarter(timeout);
-  let val = `target response time ${responseTime}:timed out ${failure}:timeout ${timeoutTime}`;
-  window.alloy('sendEvent', {
-    documentUnloading: true,
-    xdm: {
-      eventType: 'web.webinteraction.linkClicks',
-      web: {
-        webInteraction: {
-          linkClicks: { value: 1 },
-          type: 'other',
-          name: val,
-        },
-      },
-    },
-    data: { _adobe_corpnew: { digitalData: { primaryEvent: { eventInfo: { eventName: val } } } } },
-  });
-}
-
-const getTargetPersonalization = async () => {
-  const params = new URL(window.location.href).searchParams;
-
-  const experimentParam = params.get('experiment');
-  if (experimentParam) return getExpFromParam(experimentParam);
-
-  const timeout = parseInt(params.get('target-timeout'), 10)
-    || parseInt(getMetadata$3('target-timeout'), 10)
-    || TARGET_TIMEOUT_MS;
-
-  const responseStart = Date.now();
-  window.addEventListener(ALLOY_SEND_EVENT, () => {
-    const responseTime = calculateResponseTime(responseStart);
-    window.lana.log(`target response time: ${responseTime}`, { tags: 'errorType=info,module=martech' });
-  }, { once: true });
-
-  let manifests = [];
-  const response = await waitForEventOrTimeout(ALLOY_SEND_EVENT, timeout);
-  if (response.timeout) {
-    waitForEventOrTimeout(ALLOY_SEND_EVENT, 5100 - timeout)
-      .then(() => sendTargetResponseAnalytics(true, responseStart, timeout));
-  } else {
-    sendTargetResponseAnalytics(false, responseStart, timeout);
-    manifests = handleAlloyResponse(response.result);
-  }
-
-  return manifests;
-};
-
-const getDtmLib = (env) => ({
-  edgeConfigId: env.consumer?.edgeConfigId || env.edgeConfigId,
-  url:
-    env.name === 'prod'
-      ? env.consumer?.marTechUrl || 'https://assets.adobedtm.com/d4d114c60e50/a0e989131fd5/launch-5dd5dd2177e6.min.js'
-      : env.consumer?.marTechUrl || 'https://assets.adobedtm.com/d4d114c60e50/a0e989131fd5/launch-a27b33fc2dc0-development.min.js',
-});
-
-const setupEntitlementCallback = () => {
-  const setEntitlements = async (destinations) => {
-    const { default: parseEntitlements } = await Promise.resolve().then(() => entitlements);
-    return parseEntitlements(destinations);
-  };
-
-  const getEntitlements = (resolve) => {
-    const handleEntitlements = (detail) => {
-      if (detail?.result?.destinations?.length) {
-        resolve(setEntitlements(detail.result.destinations));
-      } else {
-        resolve([]);
-      }
-    };
-    waitForEventOrTimeout(ALLOY_SEND_EVENT, ENTITLEMENT_TIMEOUT, [])
-      .then(handleEntitlements)
-      .catch(() => resolve([]));
-  };
-
-  const { miloLibs, codeRoot, entitlements: resolveEnt } = getConfig$1();
-  getEntitlements(resolveEnt);
-
-  loadLink(
-    `${miloLibs || codeRoot}/features/personalization/entitlements.js`,
-    { as: 'script', rel: 'modulepreload' },
-  );
-};
-
-let filesLoadedPromise = false;
-const loadMartechFiles = async (config, url, edgeConfigId) => {
-  if (filesLoadedPromise) return filesLoadedPromise;
-
-  filesLoadedPromise = async () => {
-    loadIms()
-      .then(() => {
-        if (window.adobeIMS.isSignedInUser()) setupEntitlementCallback();
-      })
-      .catch(() => {});
-
-    setDeep(
-      window,
-      'alloy_all.data._adobe_corpnew.digitalData.page.pageInfo.language',
-      config.locale.ietf,
-    );
-    setDeep(window, 'digitalData.diagnostic.franklin.implementation', 'milo');
-
-    window.marketingtech = {
-      adobe: {
-        launch: { url, controlPageLoad: true },
-        alloy: { edgeConfigId },
-        target: false,
-      },
-      milo: true,
-    };
-    window.edgeConfigId = edgeConfigId;
-
-    const env = ['stage', 'local'].includes(config.env.name) ? '.qa' : '';
-    const martechPath = `martech.main.standard${env}.min.js`;
-    await loadScript$1(`${config.miloLibs || config.codeRoot}/deps/${martechPath}`);
-    // eslint-disable-next-line no-underscore-dangle
-    window._satellite.track('pageload');
-  };
-
-  await filesLoadedPromise();
-  return filesLoadedPromise;
-};
-
-async function init$2({
-  persEnabled = false,
-  persManifests = [],
-  postLCP = false,
-}) {
-  const config = getConfig$1();
-
-  const { url, edgeConfigId } = getDtmLib(config.env);
-  loadLink(url, { as: 'script', rel: 'preload' });
-
-  const martechPromise = loadMartechFiles(config, url, edgeConfigId);
-
-  if (persEnabled) {
-    loadLink(
-      `${config.miloLibs || config.codeRoot}/features/personalization/personalization.js`,
-      { as: 'script', rel: 'modulepreload' },
-    );
-
-    const targetManifests = await getTargetPersonalization();
-    if (targetManifests?.length || persManifests?.length) {
-      const { preloadManifests, applyPers } = await Promise.resolve().then(() => personalization);
-      const manifests = preloadManifests({ targetManifests, persManifests });
-      await applyPers(manifests, postLCP);
-    }
-  }
-
-  return martechPromise;
-}
-
-const martech = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  default: init$2
-}, Symbol.toStringTag, { value: 'Module' }));
-
-const GMTStringToLocalDate = (gmtString) => new Date(`${gmtString}+00:00`);
-
-const isDisabled = (event, searchParams) => {
-  if (!event) return false;
-  const currentDate = searchParams?.get('instant') ? new Date(searchParams.get('instant')) : new Date();
-  if ((!event.start && event.end) || (!event.end && event.start)) return true;
-  return Boolean(event.start && event.end
-    && (currentDate < event.start || currentDate > event.end));
-};
-
-function getPromoManifests(manifestNames, searchParams) {
-  const attachedManifests = manifestNames
-    ? manifestNames.split(',')?.map((manifest) => manifest?.trim())
-    : [];
-  const schedule = getMetadata$3('schedule');
-  if (!schedule) {
-    return [];
-  }
-  return schedule.split(',')
-    .map((manifest) => {
-      const [name, start, end, manifestPath] = manifest.trim().split('|').map((s) => s.trim());
-      if (attachedManifests.includes(name)) {
-        const event = {
-          name,
-          start: GMTStringToLocalDate(start),
-          end: GMTStringToLocalDate(end),
-        };
-        const disabled = isDisabled(event, searchParams);
-        return { manifestPath, disabled, event };
-      }
-      return null;
-    })
-    .filter((manifest) => manifest != null);
-}
-
-const promoUtils = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
-  __proto__: null,
-  default: getPromoManifests,
-  isDisabled
-}, Symbol.toStringTag, { value: 'Module' }));
-
 let config;
 let createTag;
-let getMetadata$1;
+let getMetadata$2;
 let loadBlock;
 let loadStyle$1;
 let sendAnalyticsFunc;
@@ -4046,7 +3657,7 @@ const getAkamaiCode$1 = () => new Promise((resolve, reject) => {
 
 // Determine if any of the locales can be linked to.
 async function getAvailableLocales$1(locales) {
-  const fallback = getMetadata$1('fallbackrouting') || config.fallbackRouting;
+  const fallback = getMetadata$2('fallbackrouting') || config.fallbackRouting;
 
   const { prefix } = config.locale;
   let path = window.location.href.replace(`${window.location.origin}`, '');
@@ -4088,18 +3699,17 @@ function getGeoroutingOverride() {
   return georouting === 'off';
 }
 
-function decorateForOnLinkClick(link, urlPrefix, localePrefix) {
+function decorateForOnLinkClick(link, urlPrefix, localePrefix, eventType = 'Switch') {
+  const modCurrPrefix = localePrefix || 'us';
+  const modPrefix = urlPrefix || 'us';
+  const eventName = `${eventType}:${modPrefix.split('_')[0]}-${modCurrPrefix.split('_')[0]}|Geo_Routing_Modal`;
+  link.setAttribute('daa-ll', eventName);
   link.addEventListener('click', () => {
-    const modPrefix = urlPrefix || 'us';
     // set cookie so legacy code on adobecom still works properly.
     const domain = window.location.host === 'adobe.com'
       || window.location.host.endsWith('.adobe.com') ? 'domain=adobe.com' : '';
     document.cookie = `international=${modPrefix};path=/;${domain}`;
     link.closest('.dialog-modal').dispatchEvent(new Event('closeModal'));
-    if (localePrefix !== undefined) {
-      const modCurrPrefix = localePrefix || 'us';
-      sendAnalyticsFunc(new Event(`Stay:${modPrefix.split('_')[0]}-${modCurrPrefix.split('_')[0]}|Geo_Routing_Modal`));
-    }
   });
 }
 
@@ -4135,7 +3745,7 @@ function removeOnClickOutsideElement(element, event, button) {
   document.addEventListener('click', func);
 }
 
-function openPicker(button, locales, country, event, dir) {
+function openPicker(button, locales, country, event, dir, currentPage) {
   if (document.querySelector('.locale-modal-v2 .picker')) {
     return;
   }
@@ -4143,7 +3753,7 @@ function openPicker(button, locales, country, event, dir) {
   locales.forEach((l) => {
     const lang = config.locales[l.prefix]?.ietf ?? '';
     const a = createTag('a', { lang, href: l.url }, `${country} - ${l.language}`);
-    decorateForOnLinkClick(a, l.prefix);
+    decorateForOnLinkClick(a, l.prefix, currentPage.prefix);
     const li = createTag('li', {}, a);
     list.appendChild(li);
   });
@@ -4194,15 +3804,15 @@ function buildContent(currentPage, locale, geoData, locales) {
     span.appendChild(downArrow);
     mainAction.addEventListener('click', (e) => {
       e.preventDefault();
-      openPicker(mainAction, locales, locale.button, e, dir);
+      openPicker(mainAction, locales, locale.button, e, dir, currentPage);
     });
   } else {
     mainAction.href = locale.url;
-    decorateForOnLinkClick(mainAction, locale.prefix);
+    decorateForOnLinkClick(mainAction, locale.prefix, currentPage.prefix);
   }
 
   const altAction = createTag('a', { lang, href: currentPage.url }, currentPage.button);
-  decorateForOnLinkClick(altAction, currentPage.prefix, locale.prefix);
+  decorateForOnLinkClick(altAction, currentPage.prefix, locale.prefix, 'Stay');
   const linkWrapper = createTag('div', { class: 'link-wrapper' }, mainAction);
   linkWrapper.appendChild(altAction);
   fragment.append(title, text, linkWrapper);
@@ -4263,7 +3873,7 @@ async function loadGeoRouting$1(
   if (getGeoroutingOverride()) return;
   config = conf;
   createTag = createTagFunc;
-  getMetadata$1 = getMetadataFunc;
+  getMetadata$2 = getMetadataFunc;
   loadBlock = loadBlockFunc;
   loadStyle$1 = loadStyleFunc;
 
@@ -4271,7 +3881,7 @@ async function loadGeoRouting$1(
   if (!resp.ok) {
     // eslint-disable-next-line import/no-cycle
     const { default: loadGeoRoutingOld } = await Promise.resolve().then(() => georouting);
-    loadGeoRoutingOld(config, createTag, getMetadata$1);
+    loadGeoRoutingOld(config, createTag, getMetadata$2);
     return;
   }
   const json = await resp.json();
@@ -4306,12 +3916,13 @@ async function loadGeoRouting$1(
 
   // Show modal when derived countries from url locale and akamai disagree
   try {
-    const akamaiCode = await getAkamaiCode$1();
+    let akamaiCode = await getAkamaiCode$1();
     if (akamaiCode && !getCodes$1(urlGeoData).includes(akamaiCode)) {
       const localeMatches = getMatches$1(json.georouting.data, akamaiCode);
       const details = await getDetails$1(urlGeoData, localeMatches, json.geos.data);
       if (details) {
         await showModal$1(details);
+        if (akamaiCode === 'gb') akamaiCode = 'uk';
         sendAnalyticsFunc(
           new Event(`Load:${urlLocale || 'us'}-${akamaiCode || 'us'}|Geo_Routing_Modal`),
         );
@@ -4571,51 +4182,59 @@ function createPreviewPill(manifests) {
     document.body.dataset.mepHighlight = true;
   }
 
+  const PREVIEW_BUTTON_ID = 'preview-button';
+
   div.innerHTML = `
     <div class="mep-manifest mep-badge">
       <span class="mep-open"></span>
       <div class="mep-manifest-count">${manifests?.length || 0} Manifest(s) served</div>
     </div>
     <div class="mep-popup">
-    <div class="mep-popup-header">
-      <div>
-        <h4>${manifests?.length || 0} Manifest(s) served</h4>
-        <span class="mep-close"></span>
-        <div class="mep-manifest-page-info-title">Page Info:</div>
-        <div>Target integration feature is ${targetOnText}</div>
-        <div>Personalization feature is ${personalizationOnText}</div>
-        <div>Page's Locale is ${config.locale.ietf}</div>
-      </div>
-    </div>
-    <div class="mep-manifest-list">
-      <div class="mep-manifest-info">
-        <div class="mep-manifest-variants">
-          <input type="checkbox" name="mepHighlight" id="mepHighlightCheckbox" ${mepHighlightChecked} value="true"> <label for="mepHighlightCheckbox">Highlight changes</label>
+      <div class="mep-popup-header">
+        <div>
+          <h4>${manifests?.length || 0} Manifest(s) served</h4>
+          <span class="mep-close"></span>
+          <div class="mep-manifest-page-info-title">Page Info:</div>
+          <div>Target integration feature is ${targetOnText}</div>
+          <div>Personalization feature is ${personalizationOnText}</div>
+          <div>Page's Locale is ${config.locale.ietf}</div>
         </div>
       </div>
-      ${manifestList}
-      <div class="mep-advanced-container">
-        <div class="mep-toggle-advanced">Advanced options</div>
-        <div class="mep-manifest-info mep-advanced-options">
-          <div>
-            Optional: new manifest location or path
-          </div>
+      <div class="mep-manifest-list">
+        <div class="mep-manifest-info">
           <div class="mep-manifest-variants">
+            <input type="checkbox" name="mepHighlight" id="mepHighlightCheckbox" ${mepHighlightChecked} value="true"> <label for="mepHighlightCheckbox">Highlight changes</label>
+          </div>
+        </div>
+        ${manifestList}
+        <div class="mep-advanced-container">
+          <div class="mep-toggle-advanced">Advanced options</div>
+          <div class="mep-manifest-info mep-advanced-options">
             <div>
-              <input type="text" name="new-manifest" id="new-manifest">
+              Optional: new manifest location or path
+            </div>
+            <div class="mep-manifest-variants">
+              <div>
+                <input type="text" name="new-manifest" id="new-manifest">
+              </div>
+            </div>
+          </div>
+          <div class="mep-manifest-info">
+            <div class="mep-manifest-variants mep-advanced-options">
+              <input type="checkbox" name="mepPreviewButtonCheckbox" id="mepPreviewButtonCheckbox" value="off"> <label for="mepPreviewButtonCheckbox">add mepButton=off to preview link</label>
             </div>
           </div>
         </div>
-        <div class="mep-manifest-info">
-          <div class="mep-manifest-variants mep-advanced-options">
-            <input type="checkbox" name="mepPreviewButtonCheckbox" id="mepPreviewButtonCheckbox" value="off"> <label for="mepPreviewButtonCheckbox">add mepButton=off to preview link</label>
-          </div>
-        </div>
       </div>
-    </div>
-    <div class="dark">
-      <a class="con-button outline button-l" href="${simulateHref.href}" title="Preview above choices">Preview</a>
+      <div class="dark">
+        <a class="con-button outline button-l" data-id="${PREVIEW_BUTTON_ID}" title="Preview above choices">Preview</a>
+      </div>
     </div>`;
+
+  const previewButton = div.querySelector(`a[data-id="${PREVIEW_BUTTON_ID}"]`);
+
+  if (previewButton) previewButton.href = simulateHref.href;
+
   overlay.append(div);
   addPillEventListeners(div);
 }
@@ -4673,7 +4292,7 @@ const fetchSeoLinks = async (path) => {
   return linkData;
 };
 
-async function init$1(path, area = document) {
+async function init$3(path, area = document) {
   const seoLinks = await fetchSeoLinks(path);
   if (!seoLinks) return;
   const { origin } = window.location;
@@ -4691,7 +4310,7 @@ async function init$1(path, area = document) {
 
 const links = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
-  default: init$1
+  default: init$3
 }, Symbol.toStringTag, { value: 'Module' }));
 
 /* eslint-disable no-console */
@@ -4912,11 +4531,12 @@ function sampleRUM(checkpoint, data = {}) {
   try {
     window.hlx = window.hlx || {};
     if (!window.hlx.rum) {
-      const usp = new URLSearchParams(window.location.search);
-      const weight = (usp.get('rum') === 'on') ? 1 : 100; // with parameter, weight is 1. Defaults to 100.
-      const id = Array.from({ length: 75 }, (_, i) => String.fromCharCode(48 + i)).filter((a) => /\d|[A-Z]/i.test(a)).filter(() => Math.random() * 75 > 70).join('');
-      const random = Math.random();
-      const isSelected = (random * weight < 1);
+      const weight = (window.SAMPLE_PAGEVIEWS_AT_RATE === 'high' && 10)
+      || (window.SAMPLE_PAGEVIEWS_AT_RATE === 'low' && 1000)
+      || (new URLSearchParams(window.location.search).get('rum') === 'on' && 1)
+      || 100;
+      const id = Math.random().toString(36).slice(-4);
+      const isSelected = (Math.random() * weight < 1);
       const firstReadTime = Date.now();
       const urlSanitizers = {
         full: () => window.location.href,
@@ -4928,7 +4548,7 @@ function sampleRUM(checkpoint, data = {}) {
       rumSessionStorage.pages = rumSessionStorage.pages ? rumSessionStorage.pages + 1 : 1;
       sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(rumSessionStorage));
       // eslint-disable-next-line object-curly-newline, max-len
-      window.hlx.rum = { weight, id, random, isSelected, firstReadTime, sampleRUM, sanitizeURL: urlSanitizers[window.hlx.RUM_MASK_URL || 'path'], rumSessionStorage };
+      window.hlx.rum = { weight, id, isSelected, firstReadTime, sampleRUM, sanitizeURL: urlSanitizers[window.hlx.RUM_MASK_URL || 'path'], rumSessionStorage };
     }
 
     const { weight, id, firstReadTime } = window.hlx.rum;
@@ -5050,7 +4670,7 @@ function stylePublish(sk) {
 }
 
 // loadScript and loadStyle are passed in to avoid circular dependencies
-function init({ createTag, loadBlock, loadScript, loadStyle }) {
+function init$2({ createTag, loadBlock, loadScript, loadStyle }) {
   // manifest v3
   const sendToCaasListener = async (e) => {
     const { host, project, ref: branch, repo, owner } = e.detail.data.config;
@@ -5094,7 +4714,7 @@ function init({ createTag, loadBlock, loadScript, loadStyle }) {
 
 const sidekick = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null,
-  default: init
+  default: init$2
 }, Symbol.toStringTag, { value: 'Module' }));
 
 /* eslint-disable import/no-cycle */
@@ -5117,7 +4737,7 @@ function findDetails(hash, el) {
   return { id, path, isHash: hash === window.location.hash };
 }
 
-function sendAnalytics(event) {
+function fireAnalyticsEvent(event) {
   // eslint-disable-next-line no-underscore-dangle
   window._satellite?.track('event', {
     xdm: {},
@@ -5126,6 +4746,17 @@ function sendAnalytics(event) {
       _adobe_corpnew: { digitalData: event?.data },
     },
   });
+}
+
+function sendAnalytics(event) {
+  // eslint-disable-next-line no-underscore-dangle
+  if (window._satellite?.track) {
+    fireAnalyticsEvent(event);
+  } else {
+    window.addEventListener('alloy_sendEvent', () => {
+      fireAnalyticsEvent(event);
+    }, { once: true });
+  }
 }
 
 function closeModal(modal) {
@@ -5593,6 +5224,203 @@ const delayed = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   loadPrivacy
 }, Symbol.toStringTag, { value: 'Module' }));
 
+/* eslint-disable max-classes-per-file */
+
+const fragMap = {};
+
+const removeHash = (url) => {
+  const urlNoHash = url.split('#')[0];
+  return url.includes('#_dnt') ? `${urlNoHash}#_dnt` : urlNoHash;
+};
+
+const isCircularRef = (href) => [...Object.values(fragMap)]
+  .some((tree) => {
+    const node = tree.find(href);
+    return node ? !(node.isLeaf) : false;
+  });
+
+const updateFragMap = (fragment, a, href) => {
+  const fragLinks = [...fragment.querySelectorAll('a')]
+    .filter((link) => localizeLink(link.href).includes('/fragments/'));
+  if (!fragLinks.length) return;
+
+  if (document.body.contains(a)) { // is fragment on page (not nested)
+    // eslint-disable-next-line no-use-before-define
+    fragMap[href] = new Tree(href);
+    fragLinks.forEach((link) => fragMap[href].insert(href, localizeLink(removeHash(link.href))));
+  } else {
+    Object.values(fragMap).forEach((tree) => {
+      if (tree.find(href)) {
+        fragLinks.forEach((link) => tree.insert(href, localizeLink(removeHash(link.href))));
+      }
+    });
+  }
+};
+
+const setManifestIdOnChildren = (sections, manifestId) => {
+  [...sections[0].children].forEach(
+    (child) => (child.dataset.manifestId = manifestId),
+  );
+};
+
+const insertInlineFrag = (sections, a, relHref) => {
+  // Inline fragments only support one section, other sections are ignored
+  const fragChildren = [...sections[0].children];
+  fragChildren.forEach((child) => child.setAttribute('data-path', relHref));
+  if (a.parentElement.nodeName === 'DIV' && !a.parentElement.attributes.length) {
+    a.parentElement.replaceWith(...fragChildren);
+  } else {
+    a.replaceWith(...fragChildren);
+  }
+};
+
+function replaceDotMedia(path, doc) {
+  const resetAttributeBase = (tag, attr) => {
+    doc.querySelectorAll(`${tag}[${attr}^="./media_"]`).forEach((el) => {
+      el[attr] = new URL(el.getAttribute(attr), new URL(path, window.location)).href;
+    });
+  };
+  resetAttributeBase('img', 'src');
+  resetAttributeBase('source', 'srcset');
+}
+
+async function init$1(a) {
+  const { decorateArea, mep } = getConfig$1();
+  let relHref = localizeLink(a.href);
+  let inline = false;
+
+  if (a.parentElement?.nodeName === 'P') {
+    const children = a.parentElement.childNodes;
+    const div = createTag$1('div');
+    for (const attr of a.parentElement.attributes) div.setAttribute(attr.name, attr.value);
+    a.parentElement.replaceWith(div);
+    div.append(...children);
+  }
+
+  if (a.href.includes('#_inline')) {
+    inline = true;
+    a.href = a.href.replace('#_inline', '');
+    relHref = relHref.replace('#_inline', '');
+  }
+
+  const path = new URL(a.href).pathname;
+  if (mep?.fragments?.[path] && mep) {
+    relHref = mep.handleFragmentCommand(mep?.fragments[path], a);
+    if (!relHref) return;
+  }
+
+  if (isCircularRef(relHref)) {
+    window.lana?.log(`ERROR: Fragment Circular Reference loading ${a.href}`);
+    return;
+  }
+
+  const { customFetch } = await Promise.resolve().then(() => helpers);
+  const resp = await customFetch({ resource: `${a.href}.plain.html`, withCacheRules: true })
+    .catch(() => ({}));
+
+  if (!resp?.ok) {
+    window.lana?.log(`Could not get fragment: ${a.href}.plain.html`);
+    return;
+  }
+
+  const html = await resp.text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  replaceDotMedia(a.href, doc);
+  if (decorateArea) decorateArea(doc, { fragmentLink: a });
+
+  const sections = doc.querySelectorAll('body > div');
+
+  if (!sections.length) {
+    window.lana?.log(`Could not make fragment: ${a.href}.plain.html`);
+    return;
+  }
+
+  const fragment = createTag$1('div', { class: 'fragment', 'data-path': relHref });
+
+  if (!inline) {
+    fragment.append(...sections);
+  }
+
+  updateFragMap(fragment, a, relHref);
+
+  if (a.dataset.manifestId) {
+    if (inline) {
+      setManifestIdOnChildren(sections, a.dataset.manifestId);
+    } else {
+      fragment.dataset.manifestId = a.dataset.manifestId;
+    }
+  }
+
+  if (inline) {
+    insertInlineFrag(sections, a, relHref);
+  } else {
+    a.parentElement.replaceChild(fragment, a);
+    await loadArea(fragment);
+  }
+}
+
+let Node$1 = class Node {
+  constructor(key, value = key, parent = null) {
+    this.key = key;
+    this.value = value;
+    this.parent = parent;
+    this.children = [];
+  }
+
+  get isLeaf() {
+    return this.children.length === 0;
+  }
+};
+
+class Tree {
+  constructor(key, value = key) {
+    this.root = new Node$1(key, value);
+  }
+
+  * traverse(node = this.root) {
+    yield node;
+    if (node.children.length) {
+      for (const child of node.children) {
+        yield* this.traverse(child);
+      }
+    }
+  }
+
+  insert(parentNodeKey, key, value = key) {
+    for (const node of this.traverse()) {
+      if (node.key === parentNodeKey) {
+        node.children.push(new Node$1(key, value, node));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  remove(key) {
+    for (const node of this.traverse()) {
+      const filtered = node.children.filter((c) => c.key !== key);
+      if (filtered.length !== node.children.length) {
+        node.children = filtered;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  find(key) {
+    for (const node of this.traverse()) {
+      if (node.key === key) return node;
+    }
+    return undefined;
+  }
+}
+
+const fragment = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  Tree,
+  default: init$1
+}, Symbol.toStringTag, { value: 'Module' }));
+
 (function () {
   const MSG_LIMIT = 2000;
 
@@ -5720,6 +5548,48 @@ const lana = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   __proto__: null
 }, Symbol.toStringTag, { value: 'Module' }));
 
+async function customFetch({ resource, withCacheRules }) {
+  const options = {};
+  if (withCacheRules) {
+    const params = new URLSearchParams(window.location.search);
+    options.cache = params.get('cache') === 'off' ? 'reload' : 'default';
+  }
+  return fetch(resource, options);
+}
+
+const helpers = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  customFetch
+}, Symbol.toStringTag, { value: 'Module' }));
+
+const getMetadata$1 = (el, config) => [...el.childNodes].reduce((rdx, row) => {
+  if (row.children?.length > 1) {
+    const key = processTrackingLabels(row.children[0].textContent, config);
+    const value = processTrackingLabels(row.children[1].textContent, config);
+    if (key && value) rdx[key] = value;
+  }
+  return rdx;
+}, {});
+
+function init(el) {
+  const config = getConfig$1();
+  const { locale, ietf = locale?.ietf, analyticLocalization } = config;
+  if (ietf !== 'en-US') {
+    config.analyticLocalization = {
+      ...analyticLocalization,
+      ...getMetadata$1(el, config),
+    };
+  }
+  el.remove();
+  return config;
+}
+
+const martechMetadata = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
+  __proto__: null,
+  default: init,
+  getMetadata: getMetadata$1
+}, Symbol.toStringTag, { value: 'Module' }));
+
 const STAGE_ENTITLEMENTS = {
   '5a5fd14e-f4ca-49d2-9f87-835df5477e3c': 'photoshop-any',
   '09bc4ba3-ebed-4d05-812d-a1fb1a7e82ae': 'indesign-any',
@@ -5731,6 +5601,7 @@ const STAGE_ENTITLEMENTS = {
   '569f0f9d-83e8-45b4-adbf-07ef08a83398': 'any-cc-product-with-stock',
   '47e204a3-220a-4e53-a95e-94b6eded0d26': '3d-substance-collection',
   '4ec7b469-42c9-4367-a7da-39f11a32d880': '3d-substance-texturing',
+  '2a93b6cc-90a2-4cff-a32d-03c71d4692e6': 'cc-free',
   // PEP segments
   '9202b767-77dc-4e6e-8d74-488d9ef08900': 'lightroom-web-usage',
   '3a7ffcce-11b8-4242-8cdf-8c8d059ae1cd': 'photoshop-signup-source',
@@ -6286,7 +6157,7 @@ const getOrigin = (fgColor) => {
     cc: 'hawks',
     dc: 'doccloud',
   };
-  const originLC = (mappings[origin] || origin).toLowerCase();
+  const originLC = mappings[origin.toLowerCase()] || origin;
   if (originLC) {
     return originLC;
   }
