@@ -1,4 +1,4 @@
-import GlobalFooter from '/static/libs/global-footer/global-footer.mjs';
+import { GlobalFooter } from '/static/libs/global-footer/global-footer.js';
 
 GlobalFooter(document.querySelector("footer"));
 
