@@ -2212,18 +2212,11 @@ const customConfig = {
   geoRouting: 'on',
   fallbackRouting: 'on',
   links: 'on',
-  //imsClientId: 'milo',
   codeRoot: '/libs',
   locales,
   prodDomains: 'milo.adobe.com',
   stageDomainsMap: {'www.adobe.com': 'www.stage.adobe.com'},
-  jarvis: {
-    id: 'milo',
-    version: '1.0',
-    onDemand: false,
-  },
-  privacyId: '7a5eb705-95ed-4cc4-a11d-0cc5760e93db', // valid for *.adobe.com
-  breadcrumbs: 'on',
+  //privacyId: '7a5eb705-95ed-4cc4-a11d-0cc5760e93db', // valid for *.adobe.com
   miloLibs: 'https://main--milo--adobecom.hlx.page/libs',
   // taxonomyRoot: '/your-path-here',
 };
