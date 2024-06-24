@@ -1,4 +1,4 @@
-import GlobalNavigation from '/static/libs/global-navigation/global-navigation.mjs';
+import { GlobalNavigation } from '/static/libs/global-navigation/global-navigation.js';
 
 const consumerConfig = {
     myConfig: 'Snehal from consumer site',
