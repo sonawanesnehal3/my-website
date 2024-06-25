@@ -1675,6 +1675,7 @@ function loadBlock$1(path) {
 
 let cachedDecorateMenu;
 async function loadDecorateMenu() {
+  const { miloLibs, codeRoot } = getConfig$1();
   if (cachedDecorateMenu) return cachedDecorateMenu;
 
   let resolve;
@@ -1683,7 +1684,7 @@ async function loadDecorateMenu() {
   });
 
   const [{ decorateMenu, decorateLinkGroup }] = await Promise.all([
-    loadBlock$1(`${federatedContentRoot}/libs/blocks/global-navigation/utilities/menu/menu.js`),
+    loadBlock$1(`${miloLibs || codeRoot}/blocks/global-navigation/utilities/menu/menu.js`),
     loadStyles('utilities/menu/menu.css'),
   ]);
 
@@ -1815,7 +1816,7 @@ class Footer {
   decorateContent = () => logErrorFor(async () => {
     // Fetch footer content
     let nonMiloFooterUrl = combinedConfig && combinedConfig.nonMiloFooterUrl || '';
-    const url = nonMiloFooterUrl ? nonMiloFooterUrl : getMetadata$3('footer-source') || `${locale.contentRoot}/footer`;
+    const url = nonMiloFooterUrl || getMetadata$3('footer-source') || `${locale.contentRoot}/footer`;
     this.body = await fetchAndProcessPlainHtml({
       url,
       shouldDecorateLinks: false,
@@ -1899,7 +1900,7 @@ class Footer {
   };
 
   loadIcons = async () => {
-    const file = await fetch(`${base}/blocks/global-footer/icons.svg`);
+    const file = await fetch(`${base !== undefined ? base : getConfig$1().miloLibs}/blocks/global-footer/icons.svg`);
 
     const content = await file.text();
     const elem = toFragment`<div class="feds-footer-icons">${content}</div>`;
