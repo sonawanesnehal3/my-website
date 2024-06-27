@@ -339,7 +339,7 @@ function setupMiloObj(config) {
   });
 }
 
-const [setConfig$1, updateConfig, getConfig$1] = (() => {
+const [setConfig$1, updateConfig, getConfig$2] = (() => {
   let config = {};
   return [
     (conf) => {
@@ -419,7 +419,7 @@ function localizeLink(
     const extension = getExtension(path);
     const allowedExts = ['', 'html', 'json'];
     if (!allowedExts.includes(extension)) return processedHref;
-    const { locale, locales, prodDomains } = getConfig$1();
+    const { locale, locales, prodDomains } = getConfig$2();
     if (!locale || !locales) return processedHref;
     const isLocalizable = relative || (prodDomains && prodDomains.includes(url.hostname))
       || overrideDomain;
@@ -459,7 +459,7 @@ function loadStyle$2(href, callback) {
 }
 
 function appendHtmlToCanonicalUrl() {
-  const { useDotHtml } = getConfig$1();
+  const { useDotHtml } = getConfig$2();
   if (!useDotHtml) return;
   const canonEl = document.head.querySelector('link[rel="canonical"]');
   if (!canonEl) return;
@@ -471,12 +471,12 @@ function appendHtmlToCanonicalUrl() {
 }
 
 function appendHtmlToLink(link) {
-  const { useDotHtml } = getConfig$1();
+  const { useDotHtml } = getConfig$2();
   if (!useDotHtml) return;
   const href = link.getAttribute('href');
   if (!href?.length) return;
 
-  const { autoBlocks = [], htmlExclude = [] } = getConfig$1();
+  const { autoBlocks = [], htmlExclude = [] } = getConfig$2();
 
   const HAS_EXTENSION = /\..*$/;
   let url = { pathname: href };
@@ -548,7 +548,7 @@ async function loadTemplate() {
   if (!template) return;
   const name = template.toLowerCase().replace(/[^0-9a-z]/gi, '-');
   document.body.classList.add(name);
-  const { miloLibs, codeRoot } = getConfig$1();
+  const { miloLibs, codeRoot } = getConfig$2();
   const base = miloLibs && MILO_TEMPLATES.includes(name) ? miloLibs : codeRoot;
   const styleLoaded = new Promise((resolve) => {
     loadStyle$2(`${base}/templates/${name}/${name}.css`, resolve);
@@ -573,7 +573,7 @@ async function loadBlock$2(block) {
   }
 
   const name = block.classList[0];
-  const { miloLibs, codeRoot, mep } = getConfig$1();
+  const { miloLibs, codeRoot, mep } = getConfig$2();
 
   const base = miloLibs && MILO_BLOCKS.includes(name) ? miloLibs : codeRoot;
   let path = `${base}/blocks/${name}`;
@@ -593,7 +593,7 @@ async function loadBlock$2(block) {
         await init(block);
       } catch (err) {
         console.log(`Failed loading ${name}`, err);
-        const config = getConfig$1();
+        const config = getConfig$2();
         if (config.env.name !== 'prod') {
           const { showError } = await Promise.resolve().then(() => fallback);
           showError(block, name);
@@ -670,7 +670,7 @@ function decorateImageLinks(el) {
 }
 
 function decorateAutoBlock(a) {
-  const config = getConfig$1();
+  const config = getConfig$2();
   const { hostname } = window.location;
   let url;
   try {
@@ -739,7 +739,7 @@ function decorateAutoBlock(a) {
 }
 
 function decorateLinks(el) {
-  const config = getConfig$1();
+  const config = getConfig$2();
   decorateImageLinks(el);
   const anchors = el.getElementsByTagName('a');
   return [...anchors].reduce((rdx, a) => {
@@ -818,7 +818,7 @@ function decorateHeader() {
   }
   header.className = headerMeta || 'gnav';
   const metadataConfig = getMetadata$3('breadcrumbs')?.toLowerCase()
-  || getConfig$1().breadcrumbs;
+  || getConfig$2().breadcrumbs;
   if (metadataConfig === 'off') return;
   const baseBreadcrumbs = getMetadata$3('breadcrumbs-base')?.length;
   const breadcrumbs = document.querySelector('.breadcrumbs');
@@ -885,7 +885,7 @@ function decorateSection(section, idx) {
   decorateDefaults(section);
   const blocks = section.querySelectorAll(':scope > div[class]:not(.content)');
 
-  const { doNotInline } = getConfig$1();
+  const { doNotInline } = getConfig$2();
   const blockLinks = [...blocks].reduce((blkLinks, block) => {
     const blockName = block.classList[0];
     links.filter((link) => block.contains(link))
@@ -938,7 +938,7 @@ async function loadIms() {
   imsLoaded = imsLoaded || new Promise((resolve, reject) => {
     const {
       locale, imsClientId, imsScope, env, base, adobeid,
-    } = getConfig$1();
+    } = getConfig$2();
     if (!imsClientId) {
       reject(new Error('Missing IMS Client ID'));
       return;
@@ -968,7 +968,7 @@ async function loadIms() {
     loadScript$1(path);
   }).then(() => {
     if (!window.adobeIMS?.isSignedInUser()) {
-      getConfig$1().entitlements([]);
+      getConfig$2().entitlements([]);
     }
   });
 
@@ -1088,7 +1088,7 @@ async function checkForPageMods() {
   const mepEnabled = persEnabled || targetEnabled || promoEnabled || mepParam;
   if (!mepEnabled) return;
 
-  const config = getConfig$1();
+  const config = getConfig$2();
   config.mep = { targetEnabled };
   loadLink(
     `${config.base}/features/personalization/personalization.js`,
@@ -1109,7 +1109,7 @@ async function checkForPageMods() {
     .catch((e) => { console.log('Unable to load IMS:', e); });
 
   const { preloadManifests, applyPers } = await Promise.resolve().then(() => personalization);
-  const manifests = preloadManifests({ persManifests }, { getConfig: getConfig$1, loadLink });
+  const manifests = preloadManifests({ persManifests }, { getConfig: getConfig$2, loadLink });
 
   await applyPers(manifests);
 }
@@ -1219,7 +1219,7 @@ function decorateMeta() {
 
   // Event-based modal
   window.addEventListener('modal:open', async (e) => {
-    const { miloLibs } = getConfig$1();
+    const { miloLibs } = getConfig$2();
     const { findDetails, getModal } = await Promise.resolve().then(() => modal);
     loadStyle$2(`${miloLibs}/blocks/modal/modal.css`);
     const details = findDetails(e.detail.hash);
@@ -1245,7 +1245,7 @@ async function documentPostSectionLoading(config) {
   }
   if (getMetadata$3('seotech-structured-data') === 'on' || getMetadata$3('seotech-video-url')) {
     Promise.resolve().then(() => seotech).then((module) => module.default(
-      { locationUrl: window.location.href, getMetadata: getMetadata$3, createTag: createTag$1, getConfig: getConfig$1 },
+      { locationUrl: window.location.href, getMetadata: getMetadata$3, createTag: createTag$1, getConfig: getConfig$2 },
     ));
   }
   const richResults = getMetadata$3('richresults');
@@ -1255,14 +1255,14 @@ async function documentPostSectionLoading(config) {
   }
   loadFooter();
   const { default: loadFavIcon } = await Promise.resolve().then(() => favicon);
-  loadFavIcon(createTag$1, getConfig$1(), getMetadata$3);
+  loadFavIcon(createTag$1, getConfig$2(), getMetadata$3);
   if (config.experiment?.selectedVariant?.scripts?.length) {
     config.experiment.selectedVariant.scripts.forEach((script) => loadScript$1(script));
   }
   initSidekick();
 
   const { default: delayed$1 } = await Promise.resolve().then(() => delayed);
-  delayed$1([getConfig$1, getMetadata$3, loadScript$1, loadStyle$2, loadIms]);
+  delayed$1([getConfig$2, getMetadata$3, loadScript$1, loadStyle$2, loadIms]);
 
   Promise.resolve().then(() => attributes).then((analytics) => {
     document.querySelectorAll('main > div').forEach((section, idx) => analytics.decorateSectionAnalytics(section, idx, config));
@@ -1314,7 +1314,7 @@ async function loadArea(area = document) {
     await checkForPageMods();
     appendHtmlToCanonicalUrl();
   }
-  const config = getConfig$1();
+  const config = getConfig$2();
 
   await decoratePlaceholders(area, config);
 
@@ -1379,7 +1379,7 @@ const utils = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   decorateLinks,
   decorateSVG,
   filterDuplicatedLinkBlocks,
-  getConfig: getConfig$1,
+  getConfig: getConfig$2,
   getLocale,
   getMepEnablement,
   getMetadata: getMetadata$3,
@@ -1515,7 +1515,8 @@ const attributes = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty
 const fetchedPlaceholders = {};
 
 const getPlaceholdersPath = (config, sheet) => {
-  const path = `${config.locale.contentRoot}/placeholders.json`;
+  const { nonMiloConsumer, nonMiloRoot } = getConfig$1();
+  const path = `${ nonMiloConsumer ? nonMiloRoot : config.locale.contentRoot}/placeholders.json`;
   const query = sheet !== 'default' && typeof sheet === 'string' && sheet.length ? `?sheet=${sheet}` : '';
   return `${path}${query}`;
 };
@@ -1750,7 +1751,7 @@ let fedsPlaceholderConfig;
 const getFedsPlaceholderConfig = ({ useCache = true } = {}) => {
   if (useCache && fedsPlaceholderConfig) return fedsPlaceholderConfig;
 
-  const { locale, placeholders } = getConfig$1();
+  const { locale, placeholders } = getConfig$2();
   const libOrigin = getFederatedContentRoot();
 
   fedsPlaceholderConfig = {
@@ -1767,7 +1768,7 @@ const getFedsPlaceholderConfig = ({ useCache = true } = {}) => {
 function getAnalyticsValue(str, index) {
   if (typeof str !== 'string' || !str.length) return str;
 
-  let analyticsValue = processTrackingLabels(str, getConfig$1(), 30);
+  let analyticsValue = processTrackingLabels(str, getConfig$2(), 30);
   analyticsValue = typeof index === 'number' ? `${analyticsValue}-${index}` : analyticsValue;
 
   return analyticsValue;
@@ -1779,14 +1780,14 @@ function getExperienceName() {
   if (explicitExperience?.length
     && explicitExperience !== 'gnav') return explicitExperience;
 
-  const { imsClientId } = getConfig$1();
+  const { imsClientId } = getConfig$2();
   if (imsClientId?.length) return imsClientId;
 
   return '';
 }
 
 function loadStyles(path) {
-  const { miloLibs, codeRoot } = getConfig$1();
+  const { miloLibs, codeRoot } = getConfig$2();
   return new Promise((resolve) => {
     loadStyle$2(`${miloLibs || codeRoot}/blocks/global-navigation/${path}`, resolve);
   });
@@ -1805,7 +1806,7 @@ function loadBlock$1(path) {
 
 let cachedDecorateMenu;
 async function loadDecorateMenu() {
-  const { miloLibs, codeRoot } = getConfig$1();
+  const { miloLibs, codeRoot } = getConfig$2();
   if (cachedDecorateMenu) return cachedDecorateMenu;
 
   let resolve;
@@ -1832,7 +1833,7 @@ const yieldToMain = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 async function fetchAndProcessPlainHtml({ url, shouldDecorateLinks = true } = {}) {
   let path = getFederatedUrl(url);
-  const mepGnav = getConfig$1()?.mep?.inBlock?.['global-navigation'];
+  const mepGnav = getConfig$2()?.mep?.inBlock?.['global-navigation'];
   const mepFragment = mepGnav?.fragments?.[path];
   if (mepFragment && mepFragment.action === 'replace') {
     path = mepFragment.target;
@@ -1902,7 +1903,7 @@ async function fetchAndProcessPlainHtml({ url, shouldDecorateLinks = true } = {}
 /* eslint-disable no-async-promise-executor */
 
 
-const { miloLibs, codeRoot, locale, mep } = getConfig$1();
+const { miloLibs, codeRoot, locale, mep } = getConfig$2();
 const base = miloLibs || codeRoot;
 
 const CONFIG = {
@@ -2031,7 +2032,7 @@ class Footer {
   };
 
   loadIcons = async () => {
-    const file = await fetch(`${base !== undefined ? base : getConfig$1().miloLibs}/blocks/global-footer/icons.svg`);
+    const file = await fetch(`${base !== undefined ? base : getConfig$2().miloLibs}/blocks/global-footer/icons.svg`);
 
     const content = await file.text();
     const elem = toFragment`<div class="feds-footer-icons">${content}</div>`;
@@ -2250,6 +2251,8 @@ function init$7(block, consumerConfig) {
         ...config$1, 
         ...consumerConfig,
         miloLibs: consumerConfig.miloLibs || 'https://main--milo--adobecom.hlx.page/libs',
+        nonMiloRoot: consumerConfig.nonMiloRoot || 'https://main--milo--adobecom.hlx.page',
+        nonMiloConsumer: true,
       };
       console.log(combinedConfig);
       setConfig$1(combinedConfig);
@@ -2302,7 +2305,7 @@ const PLAY_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height
                       </svg>`;
 
 function init$6(el, a, btnFormat) {
-  const { miloLibs, codeRoot } = getConfig$1();
+  const { miloLibs, codeRoot } = getConfig$2();
   const base = miloLibs || codeRoot;
   loadStyle$2(`${base}/styles/consonant-play-button.css`);
 
@@ -2432,7 +2435,7 @@ async function getPromoFromTaxonomy(contentRoot, doc) {
 }
 
 async function initFooterPromo(footerPromoTag, footerPromoType, doc = document) {
-  const config = getConfig$1();
+  const config = getConfig$2();
   const { locale: { contentRoot } } = config;
   let href = footerPromoTag && `${contentRoot}/fragments/footer-promos/${footerPromoTag}`;
 
@@ -2633,7 +2636,7 @@ const setupEntitlementCallback = () => {
       .catch(() => resolve([]));
   };
 
-  const { miloLibs, codeRoot, entitlements: resolveEnt } = getConfig$1();
+  const { miloLibs, codeRoot, entitlements: resolveEnt } = getConfig$2();
   getEntitlements(resolveEnt);
 
   loadLink(
@@ -2686,7 +2689,7 @@ async function init$5({
   persManifests = [],
   postLCP = false,
 }) {
-  const config = getConfig$1();
+  const config = getConfig$2();
 
   const { url, edgeConfigId } = getDtmLib(config.env);
   loadLink(url, { as: 'script', rel: 'preload' });
@@ -2722,7 +2725,7 @@ const EMEA = ['ae_en', 'ae_ar', 'africa', 'at', 'be_en', 'be_fr', 'be_nl', 'bg',
 const AMERICAS = ['us', 'ar', 'br', 'ca', 'ca_fr', 'cl', 'co', 'cr', 'ec', 'gt', 'la', 'mx', 'pe', 'pr'];
 const JP = ['jp'];
 const REGIONS = { APAC, EMEA, AMERICAS, JP };
-const localeCode = getConfig$1()?.locale?.prefix?.substring(1) || 'us';
+const localeCode = getConfig$2()?.locale?.prefix?.substring(1) || 'us';
 const regionCode = Object.keys(REGIONS)
   .find((r) => REGIONS[r]?.includes(localeCode))?.toLowerCase() || null;
 
@@ -2815,7 +2818,7 @@ const ENTITLEMENT_MAP = {
 };
 
 const getEntitlementMap = async () => {
-  const { env, consumerEntitlements } = getConfig$1();
+  const { env, consumerEntitlements } = getConfig$2();
   if (env?.name === 'prod') return { ...consumerEntitlements, ...ENTITLEMENT_MAP };
   const { default: STAGE_ENTITLEMENTS } = await Promise.resolve().then(() => stageEntitlements);
   return { ...consumerEntitlements, ...STAGE_ENTITLEMENTS };
@@ -2905,7 +2908,7 @@ const normalizePath = (p, localize = true) => {
     return path;
   }
 
-  const config = getConfig$1();
+  const config = getConfig$2();
 
   if (path.startsWith(config.codeRoot)
     || path.includes('.hlx.')
@@ -3033,7 +3036,7 @@ const getBlockProps = (fVal) => {
   if (origin.includes('.hlx.') || origin.includes('localhost')) {
     if (val.startsWith('/libs/')) {
       /* c8 ignore next 2 */
-      const { miloLibs, codeRoot } = getConfig$1();
+      const { miloLibs, codeRoot } = getConfig$2();
       val = `${miloLibs || codeRoot}${val.replace('/libs', '')}`;
     } else {
       val = `${origin}${val}`;
@@ -3084,7 +3087,7 @@ async function replaceInner(path, element) {
   if (!html) return false;
 
   element.innerHTML = html;
-  const { decorateArea } = getConfig$1();
+  const { decorateArea } = getConfig$2();
   if (decorateArea) decorateArea(element);
   return true;
 }
@@ -3150,7 +3153,7 @@ function registerInBlockActions(cmd, manifestId) {
   const blockAndSelector = selector.substring(IN_BLOCK_SELECTOR_PREFIX.length).trim().split(/\s+/);
   const [blockName] = blockAndSelector;
 
-  const config = getConfig$1();
+  const config = getConfig$2();
   config.mep.inBlock ??= {};
   config.mep.inBlock[blockName] ??= {};
 
@@ -3399,7 +3402,7 @@ const checkForParamMatch = (paramStr) => {
 };
 
 async function getPersonalizationVariant(manifestPath, variantNames = [], variantLabel = null) {
-  const config = getConfig$1();
+  const config = getConfig$2();
   if (config.mep?.variantOverride?.[manifestPath]) {
     return config.mep.variantOverride[manifestPath];
   }
@@ -3478,7 +3481,7 @@ async function getManifestConfig(info, variantOverride = false) {
   if (!persData) return null;
 
   let manifestId = getFileName(manifestPath);
-  const config = getConfig$1();
+  const config = getConfig$2();
   if (!config.mep?.preview) {
     manifestId = false;
   } else if (name) {
@@ -3540,7 +3543,7 @@ async function getManifestConfig(info, variantOverride = false) {
   const placeholders = manifestPlaceholders || data?.placeholders?.data;
   if (placeholders) {
     updateConfig(
-      parsePlaceholders(placeholders, getConfig$1(), manifestConfig.selectedVariantName),
+      parsePlaceholders(placeholders, getConfig$2(), manifestConfig.selectedVariantName),
     );
   }
 
@@ -3609,7 +3612,7 @@ function compareExecutionOrder(a, b) {
 }
 
 function cleanAndSortManifestList(manifests) {
-  const config = getConfig$1();
+  const config = getConfig$2();
   const manifestObj = {};
   let allManifests = manifests;
   if (config.mep?.experiments) allManifests = [...manifests, ...config.mep.experiments];
@@ -3658,7 +3661,7 @@ function handleFragmentCommand(command, a) {
 
 async function applyPers(manifests, postLCP = false) {
   try {
-    const config = getConfig$1();
+    const config = getConfig$2();
     if (!postLCP) {
       const {
         mep: mepParam,
@@ -4314,7 +4317,7 @@ function createPreviewPill(manifests) {
       <div class="mep-manifest-variants">${radio}</div>
     </div>`;
   });
-  const config = getConfig$1();
+  const config = getConfig$2();
   let targetOnText = config.mep.targetEnabled ? 'on' : 'off';
   if (config.mep.targetEnabled === 'gnav') targetOnText = 'on for gnav only';
   const personalizationOn = getMetadata$3('personalization');
@@ -4411,7 +4414,7 @@ function addHighlightData(manifests) {
 }
 
 async function decoratePreviewMode() {
-  const { miloLibs, codeRoot, mep } = getConfig$1();
+  const { miloLibs, codeRoot, mep } = getConfig$2();
   loadStyle$2(`${miloLibs || codeRoot}/features/personalization/preview.css`);
   createPreviewPill(mep?.experiments);
   if (mep?.experiments) addHighlightData(mep.experiments);
@@ -4944,7 +4947,7 @@ function isElementInView(element) {
 }
 
 function getCustomModal(custom, dialog) {
-  const { miloLibs, codeRoot } = getConfig$1();
+  const { miloLibs, codeRoot } = getConfig$2();
   loadStyle$2(`${miloLibs || codeRoot}/blocks/modal/modal.css`);
   if (custom.id) dialog.id = custom.id;
   if (custom.class) dialog.classList.add(custom.class);
@@ -4979,7 +4982,7 @@ async function getModal(details, custom) {
     const mediaBlock = dialog.querySelector('div.media');
     if (mediaBlock) {
       mediaBlock.classList.add('in-modal');
-      const { miloLibs, codeRoot } = getConfig$1();
+      const { miloLibs, codeRoot } = getConfig$2();
       const base = miloLibs || codeRoot;
       loadStyle$2(`${base}/styles/rounded-corners.css`);
     }
@@ -5431,7 +5434,7 @@ function replaceDotMedia(path, doc) {
 }
 
 async function init$1(a) {
-  const { decorateArea, mep } = getConfig$1();
+  const { decorateArea, mep } = getConfig$2();
   let relHref = localizeLink(a.href);
   let inline = false;
 
@@ -5718,7 +5721,7 @@ const getMetadata$1 = (el, config) => [...el.childNodes].reduce((rdx, row) => {
 }, {});
 
 function init(el) {
-  const config = getConfig$1();
+  const config = getConfig$2();
   const { locale, ietf = locale?.ietf, analyticLocalization } = config;
   if (ietf !== 'en-US') {
     config.analyticLocalization = {
@@ -6109,7 +6112,7 @@ const LOCALES = {
   vn_vi: { ietf: 'vi-VN' },
 };
 
-const pageConfig = getConfig$1();
+const pageConfig = getConfig$2();
 Object.keys(pageConfig.locales || {});
 
 const CAAS_TAG_URL = 'https://www.adobe.com/chimera-api/tags';
