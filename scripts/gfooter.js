@@ -2,8 +2,8 @@ import { GlobalFooter } from '/static/libs/global-footer/global-footer.js';
 
 const consumerConfig = {
     myConfig: 'Snehal from consumer site',
-    imsClientId: 'milo', //provide consumer client id
-    miloLibs: 'https://main--milo--adobecom.hlx.page/libs',
+    imsClientId: 'milo', // Consumer can pass {consumerimsClientId}, it will take precedence over milo imsClientId
+    miloLibs: 'https://main--milo--adobecom.hlx.page/libs', //Consumer can pass {consumermiloLibs}, it will take precedence over miloLibs
     nonMiloFooterUrl: 'https://main--federal--adobecom.hlx.page/drafts/snehal/footer',
 }
 
